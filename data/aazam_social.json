@@ -1,0 +1,453 @@
+{
+  "profiles": [
+    {
+      "id": "usr_super_01",
+      "username": "aazam_official",
+      "displayName": "Aazam Social",
+      "email": "social@aazamtravel.com",
+      "avatarUrl": "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=150&auto=format&fit=crop&q=80",
+      "coverUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200&auto=format&fit=crop&q=80",
+      "bio": "Official Aazam Social HQ. Connect • Share • Explore the world with authentic travel creators.",
+      "location": "Mumbai, India",
+      "website": "https://aazamtravel.com/social",
+      "isVerified": true,
+      "isPrivate": false,
+      "status": "active",
+      "role": "super_admin",
+      "followersCount": 14200,
+      "followingCount": 18,
+      "postsCount": 24,
+      "createdAt": "2026-01-01T08:00:00.000Z"
+    },
+    {
+      "id": "usr_priya_02",
+      "username": "wanderlust_priya",
+      "displayName": "Priya Sharma",
+      "email": "priya.travels@example.com",
+      "avatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      "coverUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1200&auto=format&fit=crop&q=80",
+      "bio": "Solo backpacker & landscape lenswoman 📸 Chasing sunrise in Himachal & ghats of Varanasi ☕️",
+      "location": "Shimla & New Delhi",
+      "website": "https://priyasharma.photo",
+      "isVerified": true,
+      "isPrivate": false,
+      "status": "active",
+      "role": "user",
+      "followersCount": 8450,
+      "followingCount": 320,
+      "postsCount": 58,
+      "createdAt": "2026-01-10T11:20:00.000Z"
+    },
+    {
+      "id": "usr_rahul_03",
+      "username": "rahul_railfan",
+      "displayName": "Rahul Varma",
+      "email": "rahul.varma@example.com",
+      "avatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "coverUrl": "https://images.unsplash.com/photo-1517649763962-0c623266ddc0?w=1200&auto=format&fit=crop&q=80",
+      "bio": "Indian Railways enthusiast 🚆 Riding every Vande Bharat route & documenting scenic Konkan railway bridges.",
+      "location": "Mumbai, Maharashtra",
+      "website": "https://youtube.com/@railfan_rahul",
+      "isVerified": true,
+      "isPrivate": false,
+      "status": "active",
+      "role": "user",
+      "followersCount": 5120,
+      "followingCount": 195,
+      "postsCount": 42,
+      "createdAt": "2026-01-15T09:15:00.000Z"
+    },
+    {
+      "id": "usr_zoya_04",
+      "username": "kashmir_tours",
+      "displayName": "Zoya Mir",
+      "email": "zoya.mir@example.com",
+      "avatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "coverUrl": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1200&auto=format&fit=crop&q=80",
+      "bio": "Mountain guide from Srinagar 🏔️ Dal lake shikaras, snow treks in Gulmarg, and saffron valley stories.",
+      "location": "Srinagar, Kashmir",
+      "website": "https://kashmirtrails.org",
+      "isVerified": false,
+      "isPrivate": false,
+      "status": "active",
+      "role": "user",
+      "followersCount": 3890,
+      "followingCount": 210,
+      "postsCount": 35,
+      "createdAt": "2026-02-01T14:40:00.000Z"
+    },
+    {
+      "id": "usr_kabir_05",
+      "username": "foodie_kabir",
+      "displayName": "Kabir Khan",
+      "email": "kabir.khan@example.com",
+      "avatarUrl": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+      "coverUrl": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1200&auto=format&fit=crop&q=80",
+      "bio": "Street food journeys across India 🍲 From Old Delhi nihari to Lucknow galouti and Indore chhappan dukan.",
+      "location": "Lucknow, UP",
+      "website": "https://foodiejourney.in",
+      "isVerified": false,
+      "isPrivate": false,
+      "status": "active",
+      "role": "user",
+      "followersCount": 2980,
+      "followingCount": 140,
+      "postsCount": 29,
+      "createdAt": "2026-02-10T16:00:00.000Z"
+    }
+  ],
+  "posts": [
+    {
+      "id": "post_01",
+      "userId": "usr_priya_02",
+      "username": "wanderlust_priya",
+      "userDisplayName": "Priya Sharma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      "isVerified": true,
+      "content": "Golden hour over the holy Ganges in Varanasi. Watching the evening Ganga Aarti from a traditional wooden boat will forever be one of the most serene experiences in India. Have you visited the ghats yet? ✨🛶",
+      "media": [
+        {
+          "id": "m_01",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1561361513-2d000a50f0dc?w=1080&auto=format&fit=crop&q=80",
+          "aspectRatio": "landscape"
+        },
+        {
+          "id": "m_02",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1571536802807-30451e3955d8?w=1080&auto=format&fit=crop&q=80",
+          "aspectRatio": "landscape"
+        }
+      ],
+      "location": "Dashashwamedh Ghat, Varanasi",
+      "hashtags": ["Varanasi", "IncredibleIndia", "SpiritualJourney", "GangaAarti"],
+      "likesCount": 248,
+      "commentsCount": 18,
+      "sharesCount": 12,
+      "savesCount": 35,
+      "isLiked": false,
+      "isSaved": false,
+      "createdAt": "2026-03-28T14:30:00.000Z",
+      "visibility": "public"
+    },
+    {
+      "id": "post_02",
+      "userId": "usr_rahul_03",
+      "username": "rahul_railfan",
+      "userDisplayName": "Rahul Varma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "isVerified": true,
+      "content": "Crossing the breathtaking Dudhsagar Falls waterfall viaduct aboard the Goa Express! Monsoons convert this spot into pure magic. Indian Railways engineering at its finest! 🚂💦",
+      "media": [
+        {
+          "id": "m_03",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=1080&auto=format&fit=crop&q=80",
+          "aspectRatio": "landscape"
+        }
+      ],
+      "location": "Dudhsagar Waterfalls, Goa",
+      "hashtags": ["IndianRailways", "KonkanRailway", "Dudhsagar", "TrainTravel"],
+      "likesCount": 412,
+      "commentsCount": 34,
+      "sharesCount": 47,
+      "savesCount": 89,
+      "isLiked": false,
+      "isSaved": false,
+      "createdAt": "2026-03-29T10:15:00.000Z",
+      "visibility": "public"
+    },
+    {
+      "id": "post_03",
+      "userId": "usr_zoya_04",
+      "username": "kashmir_tours",
+      "userDisplayName": "Zoya Mir",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "isVerified": false,
+      "content": "Morning mist over Dal Lake. The floating vegetable market comes alive at 5:30 AM before the sun peaks over the Pir Panjal range. Come experience Kashmir beyond the postcards! 🌸❄️",
+      "media": [
+        {
+          "id": "m_04",
+          "type": "image",
+          "url": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1080&auto=format&fit=crop&q=80",
+          "aspectRatio": "landscape"
+        }
+      ],
+      "location": "Dal Lake, Srinagar, Kashmir",
+      "hashtags": ["KashmirDiaries", "DalLake", "ParadiseOnEarth", "Himalayas"],
+      "likesCount": 315,
+      "commentsCount": 21,
+      "sharesCount": 19,
+      "savesCount": 44,
+      "isLiked": false,
+      "isSaved": false,
+      "createdAt": "2026-03-30T07:45:00.000Z",
+      "visibility": "public"
+    }
+  ],
+  "comments": [
+    {
+      "id": "comm_01",
+      "postId": "post_01",
+      "userId": "usr_rahul_03",
+      "username": "rahul_railfan",
+      "userDisplayName": "Rahul Varma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "content": "Incredible lighting Priya! Did you take the Vande Bharat from New Delhi to Varanasi?",
+      "createdAt": "2026-03-28T15:02:00.000Z",
+      "likesCount": 8,
+      "replies": [
+        {
+          "id": "comm_reply_01",
+          "postId": "post_01",
+          "parentId": "comm_01",
+          "userId": "usr_priya_02",
+          "username": "wanderlust_priya",
+          "userDisplayName": "Priya Sharma",
+          "userAvatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+          "content": "Yes! Vande Bharat 22436 took just 8 hours. Super smooth ride!",
+          "createdAt": "2026-03-28T15:20:00.000Z",
+          "likesCount": 5
+        }
+      ]
+    },
+    {
+      "id": "comm_02",
+      "postId": "post_02",
+      "userId": "usr_zoya_04",
+      "username": "kashmir_tours",
+      "userDisplayName": "Zoya Mir",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "content": "Dudhsagar waterfall looks so majestic! Added to my travel bucket list for next monsoon season.",
+      "createdAt": "2026-03-29T11:10:00.000Z",
+      "likesCount": 4
+    }
+  ],
+  "stories": [
+    {
+      "id": "story_01",
+      "userId": "usr_super_01",
+      "username": "aazam_official",
+      "userDisplayName": "Aazam Social",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=150&auto=format&fit=crop&q=80",
+      "mediaUrl": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&auto=format&fit=crop&q=80",
+      "mediaType": "image",
+      "caption": "Welcome to Aazam Social! Connect • Share • Explore 🌍",
+      "createdAt": "2026-10-12T01:00:00.000Z",
+      "expiresAt": "2026-10-13T01:00:00.000Z",
+      "viewsCount": 182
+    },
+    {
+      "id": "story_02",
+      "userId": "usr_priya_02",
+      "username": "wanderlust_priya",
+      "userDisplayName": "Priya Sharma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      "mediaUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800&auto=format&fit=crop&q=80",
+      "mediaType": "image",
+      "caption": "Hiking through the pine forests in Manali 🌲",
+      "createdAt": "2026-10-12T03:30:00.000Z",
+      "expiresAt": "2026-10-13T03:30:00.000Z",
+      "viewsCount": 94
+    },
+    {
+      "id": "story_03",
+      "userId": "usr_rahul_03",
+      "username": "rahul_railfan",
+      "userDisplayName": "Rahul Varma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "mediaUrl": "https://images.unsplash.com/photo-1474487548417-781cb71495f3?w=800&auto=format&fit=crop&q=80",
+      "mediaType": "image",
+      "caption": "Cab view approaching Ratnagiri station 🚉",
+      "createdAt": "2026-10-12T04:15:00.000Z",
+      "expiresAt": "2026-10-13T04:15:00.000Z",
+      "viewsCount": 68
+    }
+  ],
+  "reels": [
+    {
+      "id": "reel_01",
+      "userId": "usr_priya_02",
+      "username": "wanderlust_priya",
+      "userDisplayName": "Priya Sharma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-aerial-view-of-a-beautiful-beach-with-turquoise-water-43389-large.mp4",
+      "caption": "Turquoise waters of Radhanagar Beach, Andaman Islands 🌊 Nothing beats coastal calm.",
+      "audioTrack": "Original Sound · Priya Sharma - Ocean Waves",
+      "hashtags": ["AndamanIslands", "BeachLife", "TropicalVibes"],
+      "likesCount": 1840,
+      "commentsCount": 128,
+      "sharesCount": 312,
+      "createdAt": "2026-03-25T12:00:00.000Z"
+    },
+    {
+      "id": "reel_02",
+      "userId": "usr_rahul_03",
+      "username": "rahul_railfan",
+      "userDisplayName": "Rahul Varma",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-view-from-the-window-of-a-speeding-train-40097-large.mp4",
+      "caption": "130 km/h cruising on Western Railway mainline! Nothing matches window seat therapy 🚅💨",
+      "audioTrack": "Track Beats · Train Rhythm",
+      "hashtags": ["VandeBharat", "IndianRailways", "SpeedRail"],
+      "likesCount": 2490,
+      "commentsCount": 194,
+      "sharesCount": 420,
+      "createdAt": "2026-03-26T14:30:00.000Z"
+    },
+    {
+      "id": "reel_03",
+      "userId": "usr_zoya_04",
+      "username": "kashmir_tours",
+      "userDisplayName": "Zoya Mir",
+      "userAvatarUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-aerial-view-of-snow-capped-mountains-in-winter-42525-large.mp4",
+      "caption": "Gulmarg winter wonderland from 14,000 feet up on the Gondola phase 2! ❄️⛷️",
+      "audioTrack": "Mountain Breeze · Kashmiri Folk Flute",
+      "hashtags": ["Gulmarg", "Snowfall", "KashmirTourism"],
+      "likesCount": 3120,
+      "commentsCount": 235,
+      "sharesCount": 610,
+      "createdAt": "2026-03-27T08:15:00.000Z"
+    }
+  ],
+  "conversations": [
+    {
+      "id": "conv_01",
+      "participants": [
+        {
+          "userId": "usr_super_01",
+          "username": "aazam_official",
+          "displayName": "Aazam Social",
+          "avatarUrl": "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=150&auto=format&fit=crop&q=80",
+          "isOnline": true
+        },
+        {
+          "userId": "usr_priya_02",
+          "username": "wanderlust_priya",
+          "displayName": "Priya Sharma",
+          "avatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+          "isOnline": true
+        }
+      ],
+      "lastMessage": {
+        "content": "Thanks for featuring my Varanasi photographs in the weekly travel reel!",
+        "senderId": "usr_priya_02",
+        "createdAt": "2026-10-12T04:50:00.000Z"
+      },
+      "unreadCount": 0,
+      "updatedAt": "2026-10-12T04:50:00.000Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "msg_01",
+      "conversationId": "conv_01",
+      "senderId": "usr_super_01",
+      "content": "Hi Priya, welcome to Aazam Social! Love your travel photography across India.",
+      "createdAt": "2026-10-12T04:30:00.000Z",
+      "isRead": true
+    },
+    {
+      "id": "msg_02",
+      "conversationId": "conv_01",
+      "senderId": "usr_priya_02",
+      "content": "Thanks for featuring my Varanasi photographs in the weekly travel reel!",
+      "createdAt": "2026-10-12T04:50:00.000Z",
+      "isRead": true
+    }
+  ],
+  "notifications": [
+    {
+      "id": "notif_01",
+      "userId": "usr_super_01",
+      "actorId": "usr_priya_02",
+      "actorUsername": "wanderlust_priya",
+      "actorDisplayName": "Priya Sharma",
+      "actorAvatarUrl": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+      "type": "follow",
+      "content": "started following you",
+      "isRead": false,
+      "createdAt": "2026-10-12T04:20:00.000Z"
+    },
+    {
+      "id": "notif_02",
+      "userId": "usr_super_01",
+      "actorId": "usr_rahul_03",
+      "actorUsername": "rahul_railfan",
+      "actorDisplayName": "Rahul Varma",
+      "actorAvatarUrl": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "type": "like",
+      "content": "liked your story",
+      "targetId": "story_01",
+      "isRead": true,
+      "createdAt": "2026-10-12T03:50:00.000Z"
+    }
+  ],
+  "reports": [
+    {
+      "id": "rep_01",
+      "reporterId": "usr_rahul_03",
+      "reporterUsername": "rahul_railfan",
+      "targetType": "post",
+      "targetId": "post_02",
+      "targetAuthorId": "usr_rahul_03",
+      "targetAuthorUsername": "rahul_railfan",
+      "targetPreview": "Crossing the breathtaking Dudhsagar Falls waterfall viaduct...",
+      "reason": "spam",
+      "description": "Demonstration report for testing moderation workflow",
+      "status": "pending",
+      "actionTaken": "none",
+      "createdAt": "2026-10-12T03:00:00.000Z"
+    }
+  ],
+  "moderationActions": [
+    {
+      "id": "mod_act_01",
+      "adminId": "usr_super_01",
+      "adminUsername": "aazam_official",
+      "action": "dismiss_report",
+      "targetType": "report",
+      "targetId": "rep_demo_old",
+      "targetSummary": "Dismissed false copyright report on photography post",
+      "reason": "Creator provided proof of original camera RAW file",
+      "createdAt": "2026-10-11T16:20:00.000Z"
+    }
+  ],
+  "auditLogs": [
+    {
+      "id": "aud_01",
+      "adminId": "usr_super_01",
+      "adminUsername": "aazam_official",
+      "action": "ADMIN_LOGIN",
+      "resource": "/social/admin",
+      "details": "Super Admin signed in with verified session token",
+      "ipAddress": "127.0.0.1",
+      "timestamp": "2026-10-12T05:00:00.000Z"
+    }
+  ],
+  "follows": [
+    {
+      "followerId": "usr_super_01",
+      "followingId": "usr_priya_02",
+      "createdAt": "2026-01-11T09:00:00.000Z"
+    },
+    {
+      "followerId": "usr_super_01",
+      "followingId": "usr_rahul_03",
+      "createdAt": "2026-01-16T10:00:00.000Z"
+    },
+    {
+      "followerId": "usr_priya_02",
+      "followingId": "usr_super_01",
+      "createdAt": "2026-01-12T11:00:00.000Z"
+    }
+  ],
+  "savedPosts": [
+    {
+      "userId": "usr_super_01",
+      "postId": "post_01",
+      "createdAt": "2026-03-28T16:00:00.000Z"
+    }
+  ]
+}

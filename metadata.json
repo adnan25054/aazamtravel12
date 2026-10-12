@@ -1,0 +1,8 @@
+{
+  "name": "Remix Aazam Travel Agency",
+  "description": "Pan-India online travel agency offering IRCTC train ticket booking assistance across all Indian railway stations, domestic flights, intercity buses, hotels, and holiday tour packages.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

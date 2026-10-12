@@ -1,0 +1,271 @@
+{
+  "adminUsers": [
+    {
+      "id": "admin-1",
+      "name": "Aazam Shaikh",
+      "email": "admin@aazamtravels.com",
+      "passwordHash": "2808b02920e2d641d42c17cd1bfa83eea36a38dd68cf2ac261728432194176a426084f4a1e568f749f73bdf14e36b44e9240e00ffdabb13d23747e2ce1c0c802",
+      "salt": "c18383fe6a9ce267f1e6cdc18913da5f",
+      "role": "superadmin",
+      "createdAt": "2026-10-10T14:54:29.430Z"
+    }
+  ],
+  "settings": {
+    "businessName": "Aazam Travel Agency",
+    "category": "Online Travel Agent",
+    "tagline": "Your Trusted Pan-India Travel & Train Booking Partner",
+    "location": "Pan-India Online Booking Service",
+    "address": "Online Travel Agency · Pan-India Service",
+    "phone": "+91 94215 56220",
+    "whatsapp": "+91 94215 56220",
+    "email": "saazamshaikh@gmail.com",
+    "heroHeadline": "Your Journey Begins with Aazam Travel Agency",
+    "heroSubheadline": "Book train tickets, flights, buses, hotels, and holiday packages with fast, 100% online booking assistance across India.",
+    "announcement": "⚡ 100% Online IRCTC Train Ticket Reservation & Tatkal Booking Assistance for All Indian Stations!",
+    "announcementActive": false,
+    "officeHours": "Monday to Sunday: 8:00 AM – 10:00 PM (Online 24/7)",
+    "verifiedClaims": [
+      "100% Online booking assistance across all states in India.",
+      "Multiple travel services in one place.",
+      "Personalized trip planning & instant e-ticket delivery.",
+      "Clear pricing and booking information.",
+      "Helpful customer support via WhatsApp & Call.",
+      "Easy WhatsApp enquiries & digital payment."
+    ]
+  },
+  "services": [
+    {
+      "id": "srv-1",
+      "key": "train",
+      "title": "Train Ticket Booking (Pan-India)",
+      "shortDesc": "100% Online railway ticket booking assistance across all stations in India.",
+      "fullDesc": "Expert Indian Railways online booking assistance covering all zones and 7,000+ stations across India. Get help with General reservation, Tatkal timing guidance, Premium Tatkal, RAC and waitlist updates, class recommendations, and senior citizen lower berth preferences. Receive your confirmed E-Ticket directly on WhatsApp.",
+      "features": [
+        "Pan-India Indian Railways (IRCTC) ticket booking for all routes",
+        "Instant E-Ticket & PNR delivery straight to your WhatsApp",
+        "Sleeper, 3A, 2A, 1A, Vande Bharat, Rajdhani & Tejas booking support",
+        "Tatkal & Premium Tatkal quick online assistance",
+        "100% Online payment via UPI, Google Pay, PhonePe & Net Banking"
+      ],
+      "icon": "Train"
+    },
+    {
+      "id": "srv-2",
+      "key": "flight",
+      "title": "Flight Ticket Booking",
+      "shortDesc": "Domestic and international flight booking online across India.",
+      "fullDesc": "Competitive airfares for all domestic sectors across India and international flight routes worldwide. We assist with baggage allowances, web check-in, seat preference, and airline schedule comparisons with digital ticket delivery.",
+      "features": [
+        "Domestic connections across Delhi, Mumbai, Bengaluru, Hyderabad, Kolkata & all airports",
+        "International flights to UAE, Saudi Arabia, Europe & Asia",
+        "Baggage allowance guidance and special meals",
+        "Web check-in and boarding pass coordination online"
+      ],
+      "icon": "Plane"
+    },
+    {
+      "id": "srv-3",
+      "key": "bus",
+      "title": "Bus Ticket Booking",
+      "shortDesc": "Intercity AC Sleeper, Volvo, and luxury bus bookings across India.",
+      "fullDesc": "Reliable intercity bus bookings connecting major cities and states across India. AC Sleeper, Multi-axle Volvo, BharatBenz, and seater buses with live boarding coordination and instant WhatsApp ticket delivery.",
+      "features": [
+        "Daily departures across Maharashtra, Gujarat, MP, Karnataka, Delhi & all states",
+        "Multi-axle Volvo, BharatBenz & AC Sleeper coaches",
+        "Convenient city boarding points with live location tracking",
+        "Instant digital m-ticket sent to your phone"
+      ],
+      "icon": "Bus"
+    },
+    {
+      "id": "srv-4",
+      "key": "hotel",
+      "title": "Hotel Reservations",
+      "shortDesc": "Verified hotel stays for family, business, and holiday travel across India.",
+      "fullDesc": "Verified hotel stays tailored to your budget and group requirements across top tourist cities, transit hubs, and sacred pilgrimage destinations in India and abroad.",
+      "features": [
+        "Budget-friendly, 3-star, 4-star, and luxury hotels",
+        "Family suites, extra beds & meal plans (CP, MAP, AP)",
+        "Early check-in requests & verified amenities",
+        "Central locations near railway stations & airports"
+      ],
+      "icon": "Building2"
+    },
+    {
+      "id": "srv-5",
+      "key": "tour",
+      "title": "Tour Packages",
+      "shortDesc": "Customized domestic and international holiday packages.",
+      "fullDesc": "End-to-end holiday planning crafted around your schedule and budget. Includes hotel accommodations, sightseeing cabs, meal options, and transfers for families, couples, and groups across India.",
+      "features": [
+        "Complete customized itineraries for family & groups",
+        "Popular destinations: Kashmir, Kerala, Goa, Rajasthan, Himachal",
+        "Dedicated private cab for sightseeing",
+        "Full online travel support throughout your journey"
+      ],
+      "icon": "Compass"
+    },
+    {
+      "id": "srv-6",
+      "key": "religious",
+      "title": "Religious Tours",
+      "shortDesc": "Travel arrangements for religious destinations and pilgrimages.",
+      "fullDesc": "Specialized assistance for sacred pilgrimage journeys. We organize seamless travel for Umrah, Ajmer Sharif Ziyarat, Shirdi Sai Baba, Tirupati Balaji, and sacred temple tours across India with sensitive care for elders.",
+      "features": [
+        "Complete Umrah & Ziyarat travel coordination",
+        "Shirdi, Trimbakeshwar, Jyotirlinga circuits & sacred shrines",
+        "Elderly passenger care & wheelchair assistance requests",
+        "Hotels within walking distance of sacred shrines"
+      ],
+      "icon": "MapPin"
+    }
+  ],
+  "tourPackages": [
+    {
+      "id": "pkg-1",
+      "title": "Kashmir Valley Paradise Tour",
+      "category": "Holiday",
+      "duration": "6 Nights / 7 Days",
+      "destination": "Srinagar, Gulmarg, Pahalgam, Sonamarg",
+      "highlights": [
+        "Dal Lake Shikara ride",
+        "Gulmarg Gondola cable car",
+        "Betaab Valley & Aru Valley excursion",
+        "Traditional Houseboat stay"
+      ],
+      "inclusions": [
+        "Deluxe hotel & houseboat stay",
+        "Daily breakfast & dinner",
+        "Private cab for all transfers & sightseeing",
+        "Toll, parking & driver allowance"
+      ],
+      "startingPrice": "Rs. 18,500 per person",
+      "image": "https://images.unsplash.com/photo-1595815771614-ade9d652a65d?auto=format&fit=crop&w=1200&q=80",
+      "featured": true,
+      "description": "Experience heaven on earth with our curated Kashmir itinerary designed for families and honeymooners with comfortable stays and scenic private transfers."
+    },
+    {
+      "id": "pkg-2",
+      "title": "Umrah & Madinah Pilgrimage Package",
+      "category": "Religious",
+      "duration": "14 Nights / 15 Days",
+      "destination": "Makkah & Madinah (Saudi Arabia)",
+      "highlights": [
+        "Hotels close to Haram Sharif",
+        "Complete Ziyarat in Makkah & Madinah",
+        "Roundtrip airport & intercity transfers",
+        "Experienced guidance throughout"
+      ],
+      "inclusions": [
+        "Visa assistance & medical insurance",
+        "Star category hotel stay",
+        "Daily buffet meals",
+        "Private AC coach transfers"
+      ],
+      "startingPrice": "Rs. 1,00,000 per person",
+      "image": "https://images.unsplash.com/photo-1591604129939-f1efa4d9f7fa?auto=format&fit=crop&w=1200&q=80",
+      "featured": true,
+      "description": "Complete peace of mind for your sacred Umrah journey with hotel accommodations near the Holy Mosques and experienced ground coordination."
+    },
+    {
+      "id": "pkg-3",
+      "title": "Goa Coastal Getaway",
+      "category": "Holiday",
+      "duration": "4 Nights / 5 Days",
+      "destination": "North & South Goa",
+      "highlights": [
+        "Calangute, Baga & Anjuna beach access",
+        "Mandovi river cruise",
+        "Old Goa churches & spice plantation tour",
+        "Dudhsagar waterfall trip"
+      ],
+      "inclusions": [
+        "4-star resort stay with swimming pool",
+        "Daily buffet breakfast",
+        "Airport/station pickup & drop",
+        "Sightseeing in private vehicle"
+      ],
+      "startingPrice": "Rs. 11,500 per person",
+      "image": "https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?auto=format&fit=crop&w=1200&q=80",
+      "featured": false,
+      "description": "Relax and recharge on the sun-kissed beaches of Goa with resort comforts, water activities, and heritage sights."
+    },
+    {
+      "id": "pkg-4",
+      "title": "Maharashtra Jyotirlinga & Shirdi Pilgrimage",
+      "category": "Religious",
+      "duration": "4 Nights / 5 Days",
+      "destination": "Shirdi, Trimbakeshwar, Grishneshwar, Bhimashankar",
+      "highlights": [
+        "VIP Darshan assistance guidance",
+        "Special timings for senior citizens",
+        "Scenic Western Ghats route",
+        "Visit to Ellora caves & Shani Shingnapur"
+      ],
+      "inclusions": [
+        "AC Deluxe hotel rooms",
+        "AC private sedan/Innova for entire tour",
+        "Daily breakfast",
+        "All toll, state tax & driver charges"
+      ],
+      "startingPrice": "Rs. 9,800 per person",
+      "image": "https://images.unsplash.com/photo-1609766857041-ed402ea8069a?auto=format&fit=crop&w=1200&q=80",
+      "featured": true,
+      "description": "A deeply spiritual journey connecting the revered shrines of Maharashtra with pickup from Mumbai, Pune, Nashik or any preferred city."
+    },
+    {
+      "id": "pkg-5",
+      "title": "Royal Rajasthan Heritage Tour",
+      "category": "Domestic",
+      "duration": "5 Nights / 6 Days",
+      "destination": "Jaipur, Jodhpur, Udaipur",
+      "highlights": [
+        "Amber Fort elephant & jeep ride",
+        "City Palace & Lake Pichola boat ride",
+        "Mehrangarh Fort exploration",
+        "Chokhi Dhani cultural village"
+      ],
+      "inclusions": [
+        "Heritage hotel accommodations",
+        "Daily breakfast & dinner",
+        "AC vehicle with knowledgeable chauffeur",
+        "Monument entry guidance"
+      ],
+      "startingPrice": "Rs. 16,900 per person",
+      "image": "https://images.unsplash.com/photo-1599661046289-e31897846e41?auto=format&fit=crop&w=1200&q=80",
+      "featured": false,
+      "description": "Discover majestic palaces, desert landscapes, and rich royal heritage with seamless hospitality."
+    },
+    {
+      "id": "pkg-6",
+      "title": "Kerala Backwaters & Munnar Hills",
+      "category": "Domestic",
+      "duration": "5 Nights / 6 Days",
+      "destination": "Cochin, Munnar, Thekkady, Alleppey",
+      "highlights": [
+        "Munnar tea gardens & waterfalls",
+        "Periyar wildlife boating",
+        "Alleppey private backwater houseboat",
+        "Spice plantation walk"
+      ],
+      "inclusions": [
+        "Hill resort & deluxe houseboat",
+        "All meals on houseboat & breakfast at resorts",
+        "Private AC car throughout",
+        "Toll & parking"
+      ],
+      "startingPrice": "Rs. 15,200 per person",
+      "image": "https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?auto=format&fit=crop&w=1200&q=80",
+      "featured": false,
+      "description": "Lush greenery, mist-covered hills, and tranquil backwaters in God’s Own Country."
+    }
+  ],
+  "enquiries": [],
+  "sessions": {
+    "41f73f087f0ef3a3e5de673a963d4c3c43739c4f62eb15a5b5580451666b9bc7": {
+      "userId": "admin-1",
+      "email": "admin@aazamtravels.com",
+      "expiresAt": 1792248891717
+    }
+  }
+}

@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Allow: /favicon.svg
+Allow: /favicon-48x48.png
+Allow: /logo-icon.svg
+Allow: /logo-512x512.png
+Allow: /logo.svg
+Allow: /og-image.png
+
+# Allow Googlebot image indexer explicitly
+User-agent: Googlebot-Image
+Allow: /
