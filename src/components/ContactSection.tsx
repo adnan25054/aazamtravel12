@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { submitEnquiry } from '../api';
 import { Enquiry, ServiceType, WebsiteSettings } from '../types';
 import { StationAutocomplete } from './StationAutocomplete';
+import { OFFICIAL_LOGO_URL } from './Logo';
 import { 
   Phone, 
   MessageSquare, 
@@ -32,7 +33,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [origin, setOrigin] = useState('New Delhi (NDLS)');
+  const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [travelDate, setTravelDate] = useState(() => {
     const d = new Date();
@@ -129,9 +130,9 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <div className="lg:col-span-5 space-y-6">
             <div className="bg-[#0B2545] text-white rounded-2xl p-7 shadow-lg">
               <div className="flex items-center gap-3.5 mb-5 pb-5 border-b border-white/10">
-                <div className="bg-white/10 backdrop-blur-xs p-1 rounded-2xl shrink-0 ring-2 ring-amber-400/50">
+                <div className="bg-white p-1.5 rounded-2xl shrink-0 ring-2 ring-amber-400/50">
                   <img
-                    src="/logo.svg"
+                    src={OFFICIAL_LOGO_URL}
                     alt="Aazam Travel Agency Official Logo"
                     className="h-14 w-auto object-contain rounded-xl shadow-xs"
                   />

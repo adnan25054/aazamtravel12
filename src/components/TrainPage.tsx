@@ -227,7 +227,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
   // Booking Form State
   // ==========================================
   const [tripType, setTripType] = useState<'oneway' | 'roundtrip'>('oneway');
-  const [origin, setOrigin] = useState('New Delhi (NDLS)');
+  const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   
   const [travelDate, setTravelDate] = useState(() => {
@@ -282,7 +282,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
     return ist.toISOString().split('T')[0];
   };
 
-  const [liveTrainNumber, setLiveTrainNumber] = useState('12919');
+  const [liveTrainNumber, setLiveTrainNumber] = useState('');
   const [liveDate, setLiveDate] = useState(() => getIstDateIso(0));
   const [liveStatusLoading, setLiveStatusLoading] = useState(false);
   const [liveStatusError, setLiveStatusError] = useState<string | null>(null);
@@ -302,7 +302,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
   // ==========================================
   // Train Schedule & Timetable State
   // ==========================================
-  const [scheduleTrainNumber, setScheduleTrainNumber] = useState('12919');
+  const [scheduleTrainNumber, setScheduleTrainNumber] = useState('');
   const [scheduleHaltsOnly, setScheduleHaltsOnly] = useState(true);
   const [scheduleFilterText, setScheduleFilterText] = useState('');
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -312,7 +312,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
   // ==========================================
   // Live Station Board State
   // ==========================================
-  const [stationBoardCode, setStationBoardCode] = useState('INDB');
+  const [stationBoardCode, setStationBoardCode] = useState('');
   const [stationBoardHours, setStationBoardHours] = useState(4);
   const [stationBoardLoading, setStationBoardLoading] = useState(false);
   const [stationBoardError, setStationBoardError] = useState<string | null>(null);
@@ -371,7 +371,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
 
   const handleSwapStations = () => {
     const temp = origin;
-    setOrigin(destination || 'New Delhi (NDLS)');
+    setOrigin(destination);
     setDestination(temp);
   };
 
@@ -654,17 +654,6 @@ export const TrainPage: React.FC<TrainPageProps> = ({
     }
   };
 
-  // Automatically load initial data when user opens Live Train Status, Live Station, or Timetable
-  useEffect(() => {
-    if (activeTab === 'live-status' && !liveStatusData && !liveStatusLoading && !liveStatusError) {
-      handleCheckLiveStatus(liveTrainNumber || '12919', liveDate);
-    } else if (activeTab === 'live-station' && !stationBoardData && !stationBoardLoading && !stationBoardError) {
-      handleCheckStationBoard(stationBoardCode || 'INDB', stationBoardHours);
-    } else if (activeTab === 'schedule' && !scheduleData && !scheduleLoading && !scheduleError) {
-      handleCheckSchedule(scheduleTrainNumber || '12919');
-    }
-  }, [activeTab]);
-
 
   return (
     <div className="bg-slate-50 min-h-screen pb-20">
@@ -814,12 +803,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
 
               <button
                 type="button"
-                onClick={() => {
-                  switchTab('schedule');
-                  if (!scheduleData && !scheduleLoading) {
-                    handleCheckSchedule(scheduleTrainNumber || '12919');
-                  }
-                }}
+                onClick={() => switchTab('schedule')}
                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === 'schedule'
                     ? 'bg-orange-500 text-white shadow-md'

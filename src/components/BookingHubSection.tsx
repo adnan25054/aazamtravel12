@@ -233,7 +233,7 @@ export const BookingHubSection: React.FC<BookingHubSectionProps> = ({
   const [otherPassengers, setOtherPassengers] = useState<PassengerDetail[]>([]);
 
   // Train specific fields
-  const [trainOrigin, setTrainOrigin] = useState('New Delhi (NDLS)');
+  const [trainOrigin, setTrainOrigin] = useState('');
   const [trainDestination, setTrainDestination] = useState('');
   const [trainDate, setTrainDate] = useState(() => {
     const d = new Date();
@@ -245,7 +245,7 @@ export const BookingHubSection: React.FC<BookingHubSectionProps> = ({
   const [trainQuota, setTrainQuota] = useState('General Quota (GN)');
 
   // Flight specific fields
-  const [flightOrigin, setFlightOrigin] = useState('Nagpur (NAG) - Dr. Babasaheb Ambedkar');
+  const [flightOrigin, setFlightOrigin] = useState('');
   const [flightDestination, setFlightDestination] = useState('');
   const [flightTripType, setFlightTripType] = useState<'oneway' | 'roundtrip'>('oneway');
   const [flightDate, setFlightDate] = useState(() => {
@@ -258,7 +258,7 @@ export const BookingHubSection: React.FC<BookingHubSectionProps> = ({
   const [flightFareType, setFlightFareType] = useState('Regular Fare');
 
   // Bus specific fields
-  const [busOrigin, setBusOrigin] = useState('Indore (Sarwate / Vijay Nagar)');
+  const [busOrigin, setBusOrigin] = useState('');
   const [busDestination, setBusDestination] = useState('');
   const [busDate, setBusDate] = useState(() => {
     const d = new Date();

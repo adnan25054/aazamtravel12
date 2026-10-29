@@ -244,8 +244,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     customerName: '',
     customerPhone: '',
     customerEmail: '',
-    origin: 'New Delhi (NDLS)',
-    destination: 'Mumbai CSMT (CSMT)',
+    origin: '',
+    destination: '',
     travelDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
     passengers: 1,
     preferredClass: '3A - AC 3 Tier',
@@ -264,13 +264,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     timetableAvailable: boolean;
   } | null>(null);
   const [deskTool, setDeskTool] = useState<'live-train' | 'pnr' | 'station' | 'timetable'>('live-train');
-  const [deskTrainNo, setDeskTrainNo] = useState('12919');
+  const [deskTrainNo, setDeskTrainNo] = useState('');
   const [deskDate, setDeskDate] = useState(() => {
     const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
     return ist.toISOString().split('T')[0];
   });
   const [deskPnr, setDeskPnr] = useState('');
-  const [deskStationCode, setDeskStationCode] = useState('INDB');
+  const [deskStationCode, setDeskStationCode] = useState('');
   const [deskLoading, setDeskLoading] = useState(false);
   const [deskError, setDeskError] = useState<string | null>(null);
   const [deskLiveResult, setDeskLiveResult] = useState<LiveTrainStatusResponse | null>(null);
@@ -401,8 +401,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         customerName: '',
         customerPhone: '',
         customerEmail: '',
-        origin: 'New Delhi (NDLS)',
-        destination: 'Mumbai CSMT (CSMT)',
+        origin: '',
+        destination: '',
         travelDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
         passengers: 1,
         preferredClass: '3A - AC 3 Tier',
