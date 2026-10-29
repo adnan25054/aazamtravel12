@@ -250,7 +250,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   </span>
                 )}
                 {profile.isPrivate && (
-                  <Lock className="w-4 h-4 text-slate-400" title="Private Account" />
+                  <span title="Private Account">
+                    <Lock className="w-4 h-4 text-slate-400" />
+                  </span>
                 )}
               </div>
               <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">

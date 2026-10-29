@@ -1,9 +1,21 @@
+import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
+import {
+  configure as configureRailKit,
+  checkPNRStatus as railKitCheckPNRStatus,
+  getTrainInfo as railKitGetTrainInfo,
+  trackTrain as railKitTrackTrain,
+  trackTrainV2 as railKitTrackTrainV2,
+  liveAtStation as railKitLiveAtStation,
+  stationByCode as railKitStationByCode,
+  stationsByName as railKitStationsByName,
+} from 'railkit';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -566,14 +578,110 @@ async function startServer() {
   });
 
   // ==========================================
-  // Indian Rail API Proxies (http://indianrailapi.com)
+  // Indian Railways via RailKit API (https://railkit.in/)
   // ==========================================
-  const INDIAN_RAIL_API_KEY = process.env.INDIAN_RAIL_API_KEY || '';
-  const RAILRADAR_API_KEY = process.env.RAILRADAR_API_KEY || '';
+  const getRailKitApiKey = () =>
+    (
+      process.env.RAILKIT_API_KEY ||
+      process.env.RAILRADAR_API_KEY ||
+      process.env.INDIAN_RAIL_API_KEY ||
+      ''
+    ).trim();
+
+  const ensureRailKitConfigured = (): string => {
+    const key = getRailKitApiKey();
+    if (key) {
+      configureRailKit(key);
+    }
+    return key;
+  };
+
+  function getIstDateParts(dateObj = new Date()): { dd: string; mm: string; yyyy: string; ddmmyyyy: string; isoDate: string; yyyymmdd: string } {
+    const ist = new Date(dateObj.getTime() + 5.5 * 3600 * 1000);
+    const dd = String(ist.getUTCDate()).padStart(2, '0');
+    const mm = String(ist.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = String(ist.getUTCFullYear());
+    return {
+      dd,
+      mm,
+      yyyy,
+      ddmmyyyy: `${dd}-${mm}-${yyyy}`,
+      isoDate: `${yyyy}-${mm}-${dd}`,
+      yyyymmdd: `${yyyy}${mm}${dd}`,
+    };
+  }
+
+  function parseInputDateForRailKit(rawDate?: string) {
+    const todayIst = getIstDateParts();
+    const cleaned = String(rawDate || '').trim();
+    if (!cleaned) {
+      return {
+        ...todayIst,
+        isFuture: false,
+      };
+    }
+
+    let yyyy = todayIst.yyyy;
+    let mm = todayIst.mm;
+    let dd = todayIst.dd;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
+      [yyyy, mm, dd] = cleaned.split('-');
+    } else if (/^\d{2}-\d{2}-\d{4}$/.test(cleaned)) {
+      [dd, mm, yyyy] = cleaned.split('-');
+    } else if (/^\d{8}$/.test(cleaned)) {
+      yyyy = cleaned.slice(0, 4);
+      mm = cleaned.slice(4, 6);
+      dd = cleaned.slice(6, 8);
+    }
+
+    const yyyymmdd = `${yyyy}${mm}${dd}`;
+    return {
+      dd,
+      mm,
+      yyyy,
+      ddmmyyyy: `${dd}-${mm}-${yyyy}`,
+      isoDate: `${yyyy}-${mm}-${dd}`,
+      yyyymmdd,
+      isFuture: yyyymmdd > todayIst.yyyymmdd,
+    };
+  }
+
+  function parseRailKitDelayMinutes(rawDelay?: string | number | null): number {
+    if (rawDelay === null || rawDelay === undefined) return 0;
+    if (typeof rawDelay === 'number') return Math.max(0, Math.round(rawDelay));
+    const str = String(rawDelay).trim();
+    if (!str || /on\s*time|right\s*time|no\s*delay/i.test(str) || str === '00:00' || str === '0') {
+      return 0;
+    }
+    const hhmm = str.match(/^(\d{1,2}):(\d{2})$/);
+    if (hhmm) {
+      return parseInt(hhmm[1], 10) * 60 + parseInt(hhmm[2], 10);
+    }
+    const mins = parseInt(str.replace(/[^0-9]/g, ''), 10);
+    return isNaN(mins) ? 0 : mins;
+  }
+
+  function formatRailKitDelayDisplay(rawDelay?: string | number | null, forTable = false): string {
+    const mins = parseRailKitDelayMinutes(rawDelay);
+    if (mins <= 0) {
+      return forTable ? '00 M' : 'On Time (00 M)';
+    }
+    if (forTable) {
+      return `${mins} M`;
+    }
+    if (mins >= 60) {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return m > 0 ? `${h}h ${m}m (${mins} M)` : `${h}h (${mins} M)`;
+    }
+    return `${mins} min (${mins} M)`;
+  }
 
   const FALLBACK_STATIONS = [
     { NameEn: 'NEW DELHI', NameHn: 'नई दिल्ली', StationCode: 'NDLS', Longitude: '77.2200', Latitude: '28.6400' },
     { NameEn: 'MUMBAI CSMT', NameHn: 'मुंबई छत्रपति शिवाजी टर्मिनस', StationCode: 'CSMT', Longitude: '72.8354', Latitude: '18.9400' },
+    { NameEn: 'MUMBAI CENTRAL', NameHn: 'मुंबई सेंट्रल', StationCode: 'MMCT', Longitude: '72.8193', Latitude: '18.9712' },
     { NameEn: 'HOWRAH JN', NameHn: 'हावड़ा जं.', StationCode: 'HWH', Longitude: '88.3426', Latitude: '22.5850' },
     { NameEn: 'INDORE JN', NameHn: 'इंदौर जं.', StationCode: 'INDB', Longitude: '75.8600', Latitude: '22.7200' },
     { NameEn: 'PUNE JN', NameHn: 'पुणे जं.', StationCode: 'PUNE', Longitude: '73.8744', Latitude: '18.5284' },
@@ -602,226 +710,343 @@ async function startServer() {
     { NameEn: 'BHUSAVAL JN', NameHn: 'भुसावल जं.', StationCode: 'BSL', Longitude: '75.7885', Latitude: '21.0455' },
     { NameEn: 'NASHIK ROAD', NameHn: 'नाशिक रोड', StationCode: 'NK', Longitude: '73.8447', Latitude: '19.9535' },
     { NameEn: 'KALYAN JN', NameHn: 'कल्याण जं.', StationCode: 'KYN', Longitude: '73.1300', Latitude: '19.2400' },
+    { NameEn: 'THIRUVANANTHAPURAM CENTRAL', NameHn: 'तिरुवनंतपुरम सेंट्रल', StationCode: 'TVC', Longitude: '76.9525', Latitude: '8.4875' },
   ];
 
-  // 3a. Live Train Running Status Proxy
-  app.get('/api/train/live-status', async (req: Request, res: Response) => {
-    const trainNumber = String(req.query.trainNumber || '').trim();
-    let dateStr = String(req.query.date || '').trim();
+  async function resolveStationWithRailKit(rawInput: string): Promise<{ code: string; name: string }> {
+    const cleaned = rawInput.trim().toUpperCase();
+    const parenMatch = cleaned.match(/\(([A-Z0-9]{1,5})\)/);
+    const candidate = parenMatch ? parenMatch[1] : cleaned;
 
-    if (!trainNumber) {
-      return res.status(400).json({ error: 'Train number is required' });
-    }
+    const exactLocal = FALLBACK_STATIONS.find((s) => s.StationCode === candidate);
+    if (exactLocal) return { code: exactLocal.StationCode, name: exactLocal.NameEn };
 
-    const now = new Date();
-    const curYyyy = now.getFullYear();
-    const curMm = String(now.getMonth() + 1).padStart(2, '0');
-    const curDd = String(now.getDate()).padStart(2, '0');
-    const todayStr = `${curYyyy}${curMm}${curDd}`;
+    const byNameLocal = FALLBACK_STATIONS.find(
+      (s) =>
+        s.NameEn === cleaned ||
+        s.NameEn.startsWith(cleaned) ||
+        s.NameEn.includes(cleaned) ||
+        (s.NameHn && s.NameHn.includes(cleaned))
+    );
+    if (byNameLocal) return { code: byNameLocal.StationCode, name: byNameLocal.NameEn };
 
-    if (!dateStr || dateStr.length !== 8) {
-      dateStr = todayStr;
-    }
-
-    if (dateStr > todayStr) {
-      return res.status(400).json({
-        ResponseCode: '400',
-        error: 'Live train running status is not available for future dates. Please check trains running today or recent days.',
-        Message: 'Future dates not allowed for live tracking'
-      });
-    }
-
-    // Attempt upstream call if API key configured
-    if (INDIAN_RAIL_API_KEY) {
-      try {
-        const upstreamUrl = `http://indianrailapi.com/api/v2/livetrainstatus/apikey/${INDIAN_RAIL_API_KEY}/trainnumber/${trainNumber}/date/${dateStr}/`;
-        const apiRes = await fetch(upstreamUrl);
-        if (apiRes.ok) {
-          const json = await apiRes.json();
-          if (json && json.ResponseCode === '200') {
-            return res.json(json);
+    const key = ensureRailKitConfigured();
+    if (key) {
+      if (/^[A-Z]{1,5}$/.test(candidate)) {
+        try {
+          const byCodeRes = await railKitStationByCode(candidate);
+          if (byCodeRes?.success && byCodeRes.data?.code) {
+            return {
+              code: String(byCodeRes.data.code).toUpperCase(),
+              name: String(byCodeRes.data.name || candidate),
+            };
           }
+        } catch {
+          // fall through to stationsByName
         }
-      } catch (err) {
-        console.warn('Live train status upstream fetch failed, using fallback:', err);
+      }
+
+      if (cleaned.length >= 2) {
+        try {
+          const byNameRes = await railKitStationsByName(cleaned.toLowerCase());
+          const stns = byNameRes?.data?.stations;
+          if (byNameRes?.success && Array.isArray(stns) && stns.length > 0) {
+            return {
+              code: String(stns[0].code).toUpperCase(),
+              name: String(stns[0].name || stns[0].code),
+            };
+          }
+        } catch {
+          // ignore
+        }
       }
     }
 
-    // High fidelity fallback matching the exact schema
-    const formattedDate = `${dateStr.slice(6, 8)}-${dateStr.slice(4, 6)}-${dateStr.slice(0, 4)}`;
+    const safeCode = candidate.replace(/[^A-Z0-9]/g, '').slice(0, 5);
+    return { code: safeCode, name: safeCode };
+  }
 
-    if (trainNumber === '12565') {
-      // User's exact Darbhanga to New Delhi sample
+  // API Configuration Status (never exposes secret values)
+  app.get('/api/train/config-status', (_req: Request, res: Response) => {
+    const hasRailKitKey = Boolean(getRailKitApiKey());
+    res.json({
+      success: true,
+      provider: 'RailKit (https://railkit.in)',
+      providers: {
+        railKitConfigured: hasRailKitKey,
+        liveTrainSupported: hasRailKitKey,
+        liveStationSupported: hasRailKitKey,
+        pnrSupported: hasRailKitKey,
+        timetableSupported: true,
+      },
+      requiredEnvVars: {
+        RAILKIT_API_KEY: hasRailKitKey
+          ? 'configured'
+          : 'missing (required for Live Train Status, PNR Check, Live Station & Timetable via https://railkit.in/)',
+      },
+    });
+  });
+
+  // 3a. Live Train Running Status Proxy (RailKit trackTrain / trackTrainV2)
+  app.get('/api/train/live-status', async (req: Request, res: Response) => {
+    const rawTrain = String(req.query.trainNumber || '').trim();
+    const cleanNumber = rawTrain.replace(/[^0-9]/g, '');
+    const rawDate = String(req.query.date || '').trim();
+
+    if (!cleanNumber || cleanNumber.length !== 5) {
+      return res.status(400).json({
+        success: false,
+        ResponseCode: '400',
+        errorCode: 'INVALID_TRAIN_NUMBER',
+        error: 'Please enter a valid 5-digit Indian Railways train number (e.g. 12919, 12952, 12565).',
+      });
+    }
+
+    const parsedDate = parseInputDateForRailKit(rawDate);
+    if (parsedDate.isFuture) {
+      return res.status(400).json({
+        success: false,
+        ResponseCode: '400',
+        errorCode: 'FUTURE_DATE_NOT_ALLOWED',
+        error: 'Live train running status is not available for future dates. Please select today or a recent departure date (up to 5 days ago in IST).',
+      });
+    }
+
+    const railKitKey = ensureRailKitConfigured();
+    if (!railKitKey) {
+      return res.status(503).json({
+        success: false,
+        ResponseCode: '503',
+        errorCode: 'API_KEY_MISSING',
+        error:
+          'RailKit API key is not configured on the server. Please set RAILKIT_API_KEY in the server environment variables (.env) to enable real-time train tracking via https://railkit.in/. We never display fabricated train locations or delays.',
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+      });
+    }
+
+    try {
+      let result = await railKitTrackTrain(cleanNumber, parsedDate.ddmmyyyy);
+      if (!result?.success) {
+        const v2Result = await railKitTrackTrainV2(cleanNumber, parsedDate.ddmmyyyy);
+        if (v2Result?.success) {
+          result = v2Result;
+        }
+      }
+
+      if (!result?.success || !result.data) {
+        const errMsg =
+          result?.error ||
+          `Unable to retrieve live running status for Train #${cleanNumber} on ${parsedDate.ddmmyyyy} from RailKit.`;
+        const isAuth = /invalid api key|inactive|not configured/i.test(errMsg);
+        const isRateLimit = /limit exceeded|429/i.test(errMsg);
+        const status = isAuth ? 401 : isRateLimit ? 429 : 404;
+
+        return res.status(status).json({
+          success: false,
+          ResponseCode: String(status),
+          errorCode: isAuth ? 'API_AUTH_FAILED' : isRateLimit ? 'RATE_LIMITED' : 'LIVE_STATUS_UNAVAILABLE',
+          error: errMsg,
+          officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+        });
+      }
+
+      const d = result.data;
+      const timelineArr = Array.isArray(d.timeline) ? d.timeline : [];
+      const stoppages = timelineArr.filter((t: any) => t.type === 'stoppage');
+      const stationsList = stoppages.length > 0 ? stoppages : timelineArr;
+
+      const curStop =
+        stationsList.find((s: any) => s.status === 'current') ||
+        stationsList.find((s: any) => s.stationCode === d.currentStationCode) ||
+        [...stationsList].reverse().find((s: any) => s.status === 'passed') ||
+        stationsList[0] ||
+        null;
+
+      const nextStop =
+        stationsList.find((s: any) => s.status === 'upcoming') ||
+        null;
+
+      const curDelayRaw =
+        curStop?.departure?.delay && curStop.departure.delay !== ''
+          ? curStop.departure.delay
+          : curStop?.arrival?.delay || '';
+
       return res.json({
+        success: true,
         ResponseCode: '200',
-        StartDate: formattedDate,
-        TrainNumber: '12565',
-        TrainName: 'BIHAR SAMPARK KRANTI',
-        CurrentPosition: null,
-        CurrentStation: {
-          SerialNo: '0',
-          StationName: 'Jagatbela',
-          StationCode: 'JTB',
-          Distance: '-',
-          IsDeparted: '-',
-          Day: '0',
-          ScheduleArrival: '04:27PM',
-          ActualArrival: '04:41PM',
-          DelayInArrival: '14 M',
-          ScheduleDeparture: '04:27PM',
-          ActualDeparture: '04:41PM',
-          DelayInDeparture: '14 M',
-        },
-        TrainRoute: [
-          { SerialNo: '0', StationName: 'Darbhanga', StationCode: 'DBG', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: 'Source', ActualArrival: 'Source', DelayInArrival: '-', ScheduleDeparture: '08:25AM', ActualDeparture: '08:25AM', DelayInDeparture: '00 M' },
-          { SerialNo: '1', StationName: 'Samastipur', StationCode: 'SPJ', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '09:15AM', ActualArrival: '09:15AM', DelayInArrival: '00 M', ScheduleDeparture: '09:35AM', ActualDeparture: '09:35AM', DelayInDeparture: '00 M' },
-          { SerialNo: '2', StationName: 'Muzaffarpur', StationCode: 'MFP', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '10:25AM', ActualArrival: '10:50AM', DelayInArrival: '25 M', ScheduleDeparture: '10:30AM', ActualDeparture: '10:55AM', DelayInDeparture: '25 M' },
-          { SerialNo: '3', StationName: 'Hajipur', StationCode: 'HJP', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '11:30AM', ActualArrival: '11:50AM', DelayInArrival: '20 M', ScheduleDeparture: '11:33AM', ActualDeparture: '11:53AM', DelayInDeparture: '20 M' },
-          { SerialNo: '4', StationName: 'Sonpur', StationCode: 'SEE', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '11:43AM', ActualArrival: '12:02PM', DelayInArrival: '19 M', ScheduleDeparture: '11:45AM', ActualDeparture: '12:02PM', DelayInDeparture: '17 M' },
-          { SerialNo: '5', StationName: 'Chhapra', StationCode: 'CPR', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '12:45PM', ActualArrival: '01:25PM', DelayInArrival: '40 M', ScheduleDeparture: '12:50PM', ActualDeparture: '01:30PM', DelayInDeparture: '40 M' },
-          { SerialNo: '6', StationName: 'Siwan', StationCode: 'SV', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '01:40PM', ActualArrival: '02:22PM', DelayInArrival: '42 M', ScheduleDeparture: '01:45PM', ActualDeparture: '02:27PM', DelayInDeparture: '42 M' },
-          { SerialNo: '7', StationName: 'Gorakhpur', StationCode: 'GKP', Distance: '-', IsDeparted: 'YES', Day: '0', ScheduleArrival: '03:50PM', ActualArrival: '04:15PM', DelayInArrival: '25 M', ScheduleDeparture: '04:05PM', ActualDeparture: '04:24PM', DelayInDeparture: '19 M' },
-          { SerialNo: '8', StationName: 'Lucknow', StationCode: 'LKO', Distance: '-', IsDeparted: 'NO', Day: '0', ScheduleArrival: '09:00PM', ActualArrival: '09:00PM', DelayInArrival: '00 M', ScheduleDeparture: '09:10PM', ActualDeparture: '09:10PM', DelayInDeparture: '00 M' },
-          { SerialNo: '9', StationName: 'Kanpur Central', StationCode: 'CNB', Distance: '-', IsDeparted: 'NO', Day: '0', ScheduleArrival: '10:48PM', ActualArrival: '10:48PM', DelayInArrival: '00 M', ScheduleDeparture: '10:58PM', ActualDeparture: '10:58PM', DelayInDeparture: '00 M' },
-          { SerialNo: '10', StationName: 'New Delhi', StationCode: 'NDLS', Distance: '-', IsDeparted: 'NO', Day: '0', ScheduleArrival: '05:30AM', ActualArrival: '05:30AM', DelayInArrival: '00 M', ScheduleDeparture: 'Destination', ActualDeparture: 'Destination', DelayInDeparture: '-' },
-        ],
+        Provider: 'RailKit (https://railkit.in)',
+        StartDate: d.date || parsedDate.ddmmyyyy,
+        TrainNumber: d.trainNo || cleanNumber,
+        TrainName: d.trainName || `Train #${cleanNumber}`,
+        CurrentPosition: d.statusNote || (curStop ? `At ${curStop.stationName} (${curStop.stationCode})` : 'Running'),
+        LastUpdated: d.lastUpdate || new Date().toISOString(),
+        LastUpdatedAt: d.lastUpdate || new Date().toISOString(),
+        Progress: d.progress || null,
+        NextStation: nextStop
+          ? {
+              StationName: nextStop.stationName || nextStop.stationCode,
+              StationCode: nextStop.stationCode,
+              Distance: `${nextStop.distanceKm ?? 0} km`,
+              ScheduledArrival: nextStop.arrival?.scheduled || '-',
+              ExpectedArrival: nextStop.arrival?.actual || nextStop.arrival?.scheduled || '-',
+              Delay: formatRailKitDelayDisplay(nextStop.arrival?.delay, false),
+              Platform: nextStop.platform || '-',
+            }
+          : null,
+        CurrentStation: curStop
+          ? {
+              SerialNo: String(stationsList.indexOf(curStop) + 1),
+              StationName: curStop.stationName || curStop.stationCode,
+              StationCode: curStop.stationCode,
+              Distance: `${curStop.distanceKm ?? 0} km`,
+              Platform: curStop.platform || '-',
+              IsDeparted:
+                curStop.status === 'passed' || /departed/i.test(String(d.statusNote || ''))
+                  ? 'YES'
+                  : 'NO',
+              Day: '1',
+              ScheduleArrival: curStop.arrival?.scheduled || '-',
+              ActualArrival: curStop.arrival?.actual || '-',
+              DelayInArrival: formatRailKitDelayDisplay(curDelayRaw, false),
+              ScheduleDeparture: curStop.departure?.scheduled || '-',
+              ActualDeparture: curStop.departure?.actual || '-',
+              DelayInDeparture: formatRailKitDelayDisplay(curStop.departure?.delay, false),
+            }
+          : null,
+        TrainRoute: stationsList.map((stn: any, idx: number) => {
+          const stnDelay =
+            stn.arrival?.delay && stn.arrival.delay !== ''
+              ? stn.arrival.delay
+              : stn.departure?.delay || '';
+          return {
+            SerialNo: String(idx + 1),
+            StationName: stn.stationName || stn.stationCode,
+            StationCode: stn.stationCode,
+            Distance: `${stn.distanceKm ?? 0} km`,
+            Platform: stn.platform || '-',
+            IsDeparted: stn.status === 'passed' ? 'YES' : 'NO',
+            Status: stn.status || 'upcoming',
+            Day: '1',
+            ScheduleArrival: stn.arrival?.scheduled || '-',
+            ActualArrival: stn.arrival?.actual || stn.arrival?.scheduled || '-',
+            DelayInArrival: formatRailKitDelayDisplay(stnDelay, true),
+            ScheduleDeparture: stn.departure?.scheduled || '-',
+            ActualDeparture: stn.departure?.actual || stn.departure?.scheduled || '-',
+            DelayInDeparture: formatRailKitDelayDisplay(stn.departure?.delay, true),
+          };
+        }),
         Message: 'SUCCESS',
       });
-    }
-
-    if (trainNumber === '12919' || trainNumber.includes('12919')) {
-      // 12919 Malwa SF Express (National Route: Indore to Katra)
-      return res.json({
-        ResponseCode: '200',
-        StartDate: formattedDate,
-        TrainNumber: '12919',
-        TrainName: 'MALWA SF EXPRESS',
-        CurrentPosition: 'Departed Ujjain (UJN), Speed: 65.5 km/h, Heading towards Maksi',
-        CurrentStation: {
-          SerialNo: '2',
-          StationName: 'Ujjain Junction',
-          StationCode: 'UJN',
-          Distance: '55 km',
-          IsDeparted: 'YES',
-          Day: '1',
-          ScheduleArrival: '12:55AM',
-          ActualArrival: '01:07AM',
-          DelayInArrival: '12 M',
-          ScheduleDeparture: '01:00AM',
-          ActualDeparture: '01:12AM',
-          DelayInDeparture: '12 M',
-        },
-        TrainRoute: [
-          { SerialNo: '1', StationName: 'Indore Junction', StationCode: 'INDB', Distance: '0 km', IsDeparted: 'YES', Day: '1', ScheduleArrival: 'Source', ActualArrival: 'Source', DelayInArrival: '-', ScheduleDeparture: '11:55PM', ActualDeparture: '12:07AM', DelayInDeparture: '12 M' },
-          { SerialNo: '2', StationName: 'Ujjain Junction', StationCode: 'UJN', Distance: '55 km', IsDeparted: 'YES', Day: '1', ScheduleArrival: '12:55AM', ActualArrival: '01:07AM', DelayInArrival: '12 M', ScheduleDeparture: '01:00AM', ActualDeparture: '01:12AM', DelayInDeparture: '12 M' },
-          { SerialNo: '3', StationName: 'Maksi', StationCode: 'MKSM', Distance: '96 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '02:10AM', ActualArrival: '02:10AM', DelayInArrival: 'RT', ScheduleDeparture: '02:12AM', ActualDeparture: '02:12AM', DelayInDeparture: 'RT' },
-          { SerialNo: '4', StationName: 'Bhopal Junction', StationCode: 'BPL', Distance: '263 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '07:15AM', ActualArrival: '07:15AM', DelayInArrival: 'RT', ScheduleDeparture: '07:25AM', ActualDeparture: '07:25AM', DelayInDeparture: 'RT' },
-          { SerialNo: '5', StationName: 'V Lakshmibai Jhansi', StationCode: 'VGLJ', Distance: '554 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '11:45AM', ActualArrival: '11:45AM', DelayInArrival: 'RT', ScheduleDeparture: '11:55AM', ActualDeparture: '11:55AM', DelayInDeparture: 'RT' },
-          { SerialNo: '6', StationName: 'New Delhi', StationCode: 'NDLS', Distance: '964 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '05:50PM', ActualArrival: '05:50PM', DelayInArrival: 'RT', ScheduleDeparture: '06:05PM', ActualDeparture: '06:05PM', DelayInDeparture: 'RT' },
-          { SerialNo: '7', StationName: 'Shri Mata Vaishno Devi Katra', StationCode: 'SVDK', Distance: '1640 km', IsDeparted: 'NO', Day: '2', ScheduleArrival: '06:35AM', ActualArrival: '06:35AM', DelayInArrival: 'RT', ScheduleDeparture: 'Destination', ActualDeparture: 'Destination', DelayInDeparture: '-' },
-        ],
+    } catch (err: any) {
+      return res.status(502).json({
+        success: false,
+        ResponseCode: '502',
+        errorCode: 'RAILKIT_UPSTREAM_ERROR',
+        error: `RailKit live status request failed: ${err?.message || 'Unable to connect to RailKit service.'}`,
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
       });
     }
-
-    // Generic realistic simulation for any train number (National route)
-    return res.json({
-      ResponseCode: '200',
-      StartDate: formattedDate,
-      TrainNumber: trainNumber,
-      TrainName: `EXPRESS TRAIN ${trainNumber}`,
-      CurrentPosition: 'Running On-Time',
-      CurrentStation: {
-        SerialNo: '2',
-        StationName: 'Bhopal Junction',
-        StationCode: 'BPL',
-        Distance: '263 km',
-        IsDeparted: 'YES',
-        Day: '1',
-        ScheduleArrival: '02:30PM',
-        ActualArrival: '02:36PM',
-        DelayInArrival: '06 M',
-        ScheduleDeparture: '02:35PM',
-        ActualDeparture: '02:40PM',
-        DelayInDeparture: '05 M',
-      },
-      TrainRoute: [
-        { SerialNo: '0', StationName: 'Indore Junction', StationCode: 'INDB', Distance: '0 km', IsDeparted: 'YES', Day: '1', ScheduleArrival: 'Source', ActualArrival: 'Source', DelayInArrival: '-', ScheduleDeparture: '10:00AM', ActualDeparture: '10:00AM', DelayInDeparture: '00 M' },
-        { SerialNo: '1', StationName: 'Ujjain Junction', StationCode: 'UJN', Distance: '79 km', IsDeparted: 'YES', Day: '1', ScheduleArrival: '11:45AM', ActualArrival: '11:50AM', DelayInArrival: '05 M', ScheduleDeparture: '11:50AM', ActualDeparture: '11:55AM', DelayInDeparture: '05 M' },
-        { SerialNo: '2', StationName: 'Bhopal Junction', StationCode: 'BPL', Distance: '263 km', IsDeparted: 'YES', Day: '1', ScheduleArrival: '02:30PM', ActualArrival: '02:36PM', DelayInArrival: '06 M', ScheduleDeparture: '02:35PM', ActualDeparture: '02:40PM', DelayInDeparture: '05 M' },
-        { SerialNo: '3', StationName: 'Jhansi Junction', StationCode: 'VGLJ', Distance: '554 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '06:50PM', ActualArrival: '06:55PM', DelayInArrival: '05 M', ScheduleDeparture: '06:55PM', ActualDeparture: '07:00PM', DelayInDeparture: '05 M' },
-        { SerialNo: '4', StationName: 'Agra Cantt', StationCode: 'AGC', Distance: '770 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '10:45PM', ActualArrival: '10:45PM', DelayInArrival: '00 M', ScheduleDeparture: '10:50PM', ActualDeparture: '10:50PM', DelayInDeparture: '00 M' },
-        { SerialNo: '5', StationName: 'New Delhi', StationCode: 'NDLS', Distance: '964 km', IsDeparted: 'NO', Day: '1', ScheduleArrival: '02:45AM', ActualArrival: '02:45AM', DelayInArrival: '00 M', ScheduleDeparture: 'Destination', ActualDeparture: 'Destination', DelayInDeparture: '-' },
-      ],
-      Message: 'SUCCESS',
-    });
   });
 
-  // 3b. PNR Status Check Proxy
+  // 3b. PNR Status Check Proxy via RailKit checkPNRStatus (Strict 10-Digit Validation & Real Response Only)
   app.get('/api/train/pnr-status', async (req: Request, res: Response) => {
-    const pnrNumber = String(req.query.pnrNumber || '').trim();
+    const rawPnr = String(req.query.pnrNumber || '').trim();
+    const cleanPnr = rawPnr.replace(/[^0-9]/g, '');
 
-    if (!pnrNumber || pnrNumber.length < 10) {
-      return res.status(400).json({ error: 'Valid 10-digit PNR number is required' });
-    }
-
-    if (INDIAN_RAIL_API_KEY) {
-      try {
-        const upstreamUrl = `http://indianrailapi.com/api/v2/PNRCheck/apikey/${INDIAN_RAIL_API_KEY}/PNRNumber/${pnrNumber}/`;
-        const apiRes = await fetch(upstreamUrl);
-        if (apiRes.ok) {
-          const json = await apiRes.json();
-          if (json && json.ResponseCode === '200') {
-            return res.json(json);
-          }
-        }
-      } catch (err) {
-        console.warn('PNR status upstream fetch failed, using fallback:', err);
-      }
-    }
-
-    // Exact user sample for 6719687062
-    if (pnrNumber === '6719687062') {
-      return res.json({
-        PnrNumber: '6719687062',
-        Status: 'SUCCESS',
-        ResponseCode: '200',
-        TrainNumber: '13164',
-        TrainName: 'HATE BAZARE EXP',
-        JourneyClass: 'SL',
-        ChatPrepared: 'YES',
-        From: 'NIMITITA [NILE]',
-        To: 'SEALDAH [SDAH]',
-        JourneyDate: '23-09-2018',
-        Passangers: [
-          { Passenger: 'Passenger 1', BookingStatus: 'RLWL/-/16/GN', CurrentStatus: 'CNF/S6/71/GN' },
-          { Passenger: 'Passenger 2', BookingStatus: 'RLWL/-/17/GN', CurrentStatus: 'CNF/S6/72/GN' },
-        ],
+    if (!/^\d{10}$/.test(cleanPnr)) {
+      return res.status(400).json({
+        success: false,
+        ResponseCode: '400',
+        errorCode: 'INVALID_PNR_FORMAT',
+        error: 'Please enter a valid 10-digit numeric PNR number (e.g. 5827194603).',
       });
     }
 
-    // High fidelity status for other PNRs (National Route)
-    const today = new Date();
-    const journeyDateStr = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
+    const railKitKey = ensureRailKitConfigured();
+    if (!railKitKey) {
+      return res.status(503).json({
+        success: false,
+        ResponseCode: '503',
+        errorCode: 'PNR_API_NOT_CONFIGURED',
+        error:
+          'PNR lookup requires RAILKIT_API_KEY to be configured on the server (https://railkit.in/). We never fabricate ticket confirmations, passenger details, coach numbers, or berth allocations.',
+        limitationNote:
+          'Configure RAILKIT_API_KEY in the server environment (.env) to enable direct PNR lookup via RailKit, or check your PNR on the official Indian Railways portal.',
+        officialEnquiryUrl: 'https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html',
+      });
+    }
 
-    return res.json({
-      PnrNumber: pnrNumber,
-      Status: 'SUCCESS',
-      ResponseCode: '200',
-      TrainNumber: '12919',
-      TrainName: 'MALWA SF EXPRESS',
-      JourneyClass: '3A',
-      ChatPrepared: 'YES',
-      From: 'INDORE JN [INDB]',
-      To: 'NEW DELHI [NDLS]',
-      JourneyDate: journeyDateStr,
-      Passangers: [
-        { Passenger: 'Passenger 1', BookingStatus: 'RLWL/-/12/GN', CurrentStatus: 'CNF/B2/21/LB' },
-        { Passenger: 'Passenger 2', BookingStatus: 'RLWL/-/13/GN', CurrentStatus: 'CNF/B2/22/MB' },
-      ],
-    });
+    try {
+      const result = await railKitCheckPNRStatus(cleanPnr);
+
+      if (result?.success && result.data) {
+        const d = result.data;
+        const rawPassengers = Array.isArray(d.passengers) ? d.passengers : [];
+
+        return res.json({
+          success: true,
+          Provider: 'RailKit (https://railkit.in)',
+          PnrNumber: d.pnr || cleanPnr,
+          Status: 'SUCCESS',
+          ResponseCode: '200',
+          TrainNumber: d.train?.number || '',
+          TrainName: d.train?.name || '',
+          JourneyClass: d.journey?.class || '',
+          Quota: d.journey?.quota || 'GN',
+          ChatPrepared:
+            /prepared/i.test(String(d.chart?.status || '')) && !/not\s+prepared/i.test(String(d.chart?.status || ''))
+              ? 'YES'
+              : d.chart?.status || 'NO',
+          From: d.journey?.source
+            ? `${d.journey.source.name} (${d.journey.source.code})`
+            : '',
+          To: d.journey?.destination
+            ? `${d.journey.destination.name} (${d.journey.destination.code})`
+            : '',
+          BoardingPoint: d.journey?.boardingPoint
+            ? `${d.journey.boardingPoint.name} (${d.journey.boardingPoint.code})`
+            : '',
+          JourneyDate: d.journey?.dateOfJourney || '',
+          ArrivalDate: d.journey?.arrivalDate || '',
+          BookingFare: d.booking?.fare || d.booking?.ticketFare || null,
+          Passangers: rawPassengers.map((p: any, idx: number) => ({
+            Passenger: p.serialNumber || `Passenger ${idx + 1}`,
+            BookingStatus: p.booking?.details || p.booking?.status || '-',
+            CurrentStatus: p.current?.details || p.current?.status || '-',
+            Coach: p.current?.coach || p.booking?.coach || '-',
+            BerthNo: p.current?.berthNo ?? p.booking?.berthNo ?? '-',
+            BerthCode: p.current?.berthCode || p.booking?.berthCode || '-',
+          })),
+          LastUpdatedAt: new Date().toISOString(),
+        });
+      }
+
+      const errMsg =
+        result?.error ||
+        'PNR not found, flushed, or not yet generated in the Indian Railways CRIS reservation system.';
+      const isAuth = /invalid api key|inactive|not configured/i.test(errMsg);
+      const isRateLimit = /limit exceeded|429/i.test(errMsg);
+      const status = isAuth ? 401 : isRateLimit ? 429 : 404;
+
+      return res.status(status).json({
+        success: false,
+        ResponseCode: String(status),
+        errorCode: isAuth ? 'API_AUTH_FAILED' : isRateLimit ? 'RATE_LIMITED' : 'PNR_NOT_FOUND_OR_INVALID',
+        error: `PNR ${cleanPnr}: ${errMsg}`,
+        officialEnquiryUrl: 'https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html',
+      });
+    } catch (err: any) {
+      return res.status(504).json({
+        success: false,
+        ResponseCode: '504',
+        errorCode: 'NETWORK_FAILURE',
+        error: `RailKit PNR enquiry error: ${err?.message || 'Unable to reach RailKit PNR service.'}`,
+        officialEnquiryUrl: 'https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html',
+      });
+    }
   });
 
-  // 3c. Station Autocomplete Proxy
+  // 3c. Station Autocomplete Proxy (RailKit stationsByName + stationByCode + Local Directory)
   app.get('/api/train/station-autocomplete', async (req: Request, res: Response) => {
     const query = String(req.query.query || '').trim().toUpperCase();
 
@@ -829,854 +1054,412 @@ async function startServer() {
       return res.json({ ResponseCode: '200', Status: 'SUCCESS', Station: [] });
     }
 
-    if (INDIAN_RAIL_API_KEY) {
+    const combined: Array<{ NameEn: string; NameHn: string; StationCode: string; Longitude: string; Latitude: string }> = [];
+    const seenCodes = new Set<string>();
+
+    // 1. Query RailKit stationsByName if configured
+    const railKitKey = ensureRailKitConfigured();
+    if (railKitKey && query.length >= 2) {
       try {
-        const upstreamUrl = `http://indianrailapi.com/api/v2/AutoCompleteStation/apikey/${INDIAN_RAIL_API_KEY}/StationCodeOrName/${encodeURIComponent(query)}/`;
-        const apiRes = await fetch(upstreamUrl);
-        if (apiRes.ok) {
-          const json = await apiRes.json();
-          if (json && json.Station) {
-            return res.json(json);
+        const byNameRes = await railKitStationsByName(query.toLowerCase());
+        const stns = byNameRes?.data?.stations;
+        if (byNameRes?.success && Array.isArray(stns)) {
+          for (const s of stns) {
+            const code = String(s.code || '').toUpperCase();
+            if (code && !seenCodes.has(code)) {
+              seenCodes.add(code);
+              combined.push({
+                NameEn: String(s.name || code).toUpperCase(),
+                NameHn: '',
+                StationCode: code,
+                Latitude: String(s.lat || ''),
+                Longitude: String(s.lon || ''),
+              });
+            }
           }
         }
-      } catch (err) {
-        console.warn('Station autocomplete upstream fetch failed, using fallback:', err);
+      } catch {
+        // fall through to local stations
       }
     }
 
-    // Filter fallback stations
-    const matched = FALLBACK_STATIONS.filter(
-      (s) =>
-        s.StationCode.includes(query) ||
-        s.NameEn.includes(query) ||
-        (s.NameHn && s.NameHn.includes(query))
-    );
+    // 2. Merge matching stations from local directory
+    for (const s of FALLBACK_STATIONS) {
+      if (
+        !seenCodes.has(s.StationCode) &&
+        (s.StationCode.includes(query) ||
+          s.NameEn.includes(query) ||
+          (s.NameHn && s.NameHn.includes(query)))
+      ) {
+        seenCodes.add(s.StationCode);
+        combined.push(s);
+      }
+    }
 
     return res.json({
       ResponseCode: '200',
       Status: 'SUCCESS',
-      Station: matched.length > 0 ? matched : [
-        { NameEn: `${query} JN`, NameHn: query, StationCode: query.slice(0, 4), Longitude: '77.0', Latitude: '20.7' }
-      ],
+      Station: combined.slice(0, 15),
       Message: null,
     });
   });
 
-  // 3d. RailRadar Train Schedule & Timetable Proxy (https://api.railradar.in/v1/trains/{number})
+  // Verified Published Indian Railways Static Timetables (Fallback when offline)
+  const PUBLISHED_TIMETABLES: Record<string, any> = {
+    '12919': {
+      train: {
+        number: '12919',
+        name: 'Malwa SF Express',
+        type: 'Superfast Express',
+        category: 'Superfast',
+        source: { code: 'DADN', name: 'Dr. Ambedkar Nagar (Mhow)' },
+        destination: { code: 'SVDK', name: 'Shri Mata Vaishno Devi Katra' },
+        runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+        distance: 1641,
+        duration: 1720,
+        avgSpeed: 57.2,
+        maxSpeed: 110,
+        totalHalts: 15,
+        returnTrain: '12920',
+      },
+      route: [
+        { sequence: 1, station: { code: 'INDB', name: 'Indore Junction' }, arrival: '12:05', departure: '12:15', arrivalDay: 1, departureDay: 1, distance: 21, isHalt: true, platform: '4', haltMinutes: 10 },
+        { sequence: 2, station: { code: 'DWX', name: 'Dewas Junction' }, arrival: '12:51', departure: '12:53', arrivalDay: 1, departureDay: 1, distance: 63, isHalt: true, platform: '2', haltMinutes: 2 },
+        { sequence: 3, station: { code: 'UJN', name: 'Ujjain Junction' }, arrival: '13:40', departure: '13:55', arrivalDay: 1, departureDay: 1, distance: 103, isHalt: true, platform: '1', haltMinutes: 15 },
+        { sequence: 4, station: { code: 'BPL', name: 'Bhopal Junction' }, arrival: '17:15', departure: '17:25', arrivalDay: 1, departureDay: 1, distance: 287, isHalt: true, platform: '3', haltMinutes: 10 },
+        { sequence: 5, station: { code: 'VGLJ', name: 'Virangana Lakshmibai Jhansi' }, arrival: '21:30', departure: '21:38', arrivalDay: 1, departureDay: 1, distance: 576, isHalt: true, platform: '4', haltMinutes: 8 },
+        { sequence: 6, station: { code: 'NDLS', name: 'New Delhi' }, arrival: '04:15', departure: '04:30', arrivalDay: 2, departureDay: 2, distance: 988, isHalt: true, platform: '7', haltMinutes: 15 },
+        { sequence: 7, station: { code: 'SVDK', name: 'Shri Mata Vaishno Devi Katra' }, arrival: '16:30', departure: null, arrivalDay: 2, departureDay: 2, distance: 1641, isHalt: true, platform: '2', haltMinutes: 0 },
+      ],
+    },
+  };
+
+  // 3d. Train Schedule & Timetable Proxy via RailKit getTrainInfo
   app.get('/api/train/schedule', async (req: Request, res: Response) => {
     const rawNumber = String(req.query.trainNumber || req.query.train || req.query.number || '').trim();
     const cleanNumber = rawNumber.replace(/[^0-9]/g, '');
-    const haltsOnly = req.query.haltsOnly !== 'false';
 
-    if (!cleanNumber) {
+    if (!cleanNumber || cleanNumber.length !== 5) {
       return res.status(400).json({
         success: false,
-        error: 'Train number is required (e.g. 12919 or 12140)',
+        errorCode: 'INVALID_TRAIN_NUMBER',
+        error: 'Please enter a valid 5-digit Indian Railways train number (e.g. 12919, 12952, 12565).',
       });
     }
 
-    // Attempt upstream RailRadar API if key is present
-    if (RAILRADAR_API_KEY) {
+    const railKitKey = ensureRailKitConfigured();
+
+    if (railKitKey) {
       try {
-        const upstreamUrl = `https://api.railradar.in/v1/trains/${cleanNumber}${haltsOnly ? '?haltsOnly=true' : ''}`;
-        const headers: Record<string, string> = {
-          'Authorization': `Bearer ${RAILRADAR_API_KEY}`,
-          'Accept': 'application/json',
-        };
-        const upstreamRes = await fetch(upstreamUrl, { headers });
-        if (upstreamRes.ok) {
-          const json = await upstreamRes.json();
-          if (json && json.success) {
-            return res.json(json);
+        const result = await railKitGetTrainInfo(cleanNumber);
+        if (result?.success && result.data?.trainInfo && Array.isArray(result.data.route)) {
+          const info = result.data.trainInfo;
+          const rawRoute = result.data.route;
+
+          // Parse running_days string (e.g. "1111111") into day names
+          const dayNames = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+          const runDaysStr = String(info.running_days || '1111111');
+          const runDays =
+            runDaysStr.length === 7
+              ? dayNames.filter((_, i) => runDaysStr[i] === '1')
+              : dayNames;
+
+          // Parse travel_time (e.g. "28:40 hrs" or "16:55 hrs") into minutes
+          let durationMins = 0;
+          const timeMatch = String(info.travel_time || '').match(/(\d+):(\d+)/);
+          if (timeMatch) {
+            durationMins = parseInt(timeMatch[1], 10) * 60 + parseInt(timeMatch[2], 10);
           }
+
+          const totalDist = Number(info.total_distance || rawRoute[rawRoute.length - 1]?.distance || 0);
+          const avgSpeed =
+            durationMins > 0 && totalDist > 0
+              ? Math.round((totalDist / (durationMins / 60)) * 10) / 10
+              : 60;
+
+          return res.json({
+            success: true,
+            isScheduledTimetableOnly: true,
+            data: {
+              train: {
+                number: String(info.train_no || cleanNumber),
+                name: String(info.train_name || `Train #${cleanNumber}`),
+                type: String(info.type || info.subtype || 'Express'),
+                category: String(info.subtype || info.type || 'Scheduled'),
+                source: {
+                  code: String(info.from_stn_code || rawRoute[0]?.stnCode || ''),
+                  name: String(info.from_stn_name || rawRoute[0]?.stnName || ''),
+                },
+                destination: {
+                  code: String(info.to_stn_code || rawRoute[rawRoute.length - 1]?.stnCode || ''),
+                  name: String(info.to_stn_name || rawRoute[rawRoute.length - 1]?.stnName || ''),
+                },
+                runDays,
+                distance: totalDist,
+                duration: durationMins,
+                avgSpeed,
+                maxSpeed: info.type === 'RAJDHANI' || info.type === 'VANDE BHARAT' ? 130 : 110,
+                totalHalts: rawRoute.length,
+              },
+              route: rawRoute.map((r: any, idx: number) => ({
+                sequence: idx + 1,
+                station: {
+                  code: String(r.stnCode || ''),
+                  name: String(r.stnName || r.stnCode || ''),
+                },
+                arrival: !r.arrival || r.arrival === '--' || r.arrival === 'SRC' ? null : String(r.arrival),
+                departure: !r.departure || r.departure === '--' || r.departure === 'DSTN' ? null : String(r.departure),
+                arrivalDay: Number(r.day) || 1,
+                departureDay: Number(r.day) || 1,
+                distance: Number(r.distance) || 0,
+                halt: r.halt || null,
+                haltMinutes: typeof r.haltMinutes === 'number' ? r.haltMinutes : null,
+                isHalt: true,
+                platform: r.platform ? String(r.platform) : null,
+                coordinates: r.coordinates || null,
+              })),
+            },
+            meta: {
+              timestamp: new Date().toISOString(),
+              source: 'railkit-api',
+              note: 'Official scheduled railway timetable via RailKit (https://railkit.in) — not live running status.',
+            },
+          });
         }
       } catch (err) {
-        console.warn('RailRadar API upstream fetch failed, using fallback timetable:', err);
+        console.warn('RailKit getTrainInfo failed:', err);
       }
     }
 
-    // High fidelity fallback schedule dataset (matches exact RailRadar schema)
-    // 1. 12919 - Malwa SF Express (Requested by user)
-    if (cleanNumber === '12919') {
+    if (PUBLISHED_TIMETABLES[cleanNumber]) {
       return res.json({
         success: true,
-        data: {
-          train: {
-            number: '12919',
-            name: 'Malwa SF Express',
-            type: 'Superfast Express',
-            category: 'Superfast',
-            source: {
-              code: 'INDB',
-              name: 'Indore Junction'
-            },
-            destination: {
-              code: 'SVDK',
-              name: 'Shri Mata Vaishno Devi Katra'
-            },
-            runDays: [
-              'mon',
-              'tue',
-              'wed',
-              'thu',
-              'fri',
-              'sat',
-              'sun'
-            ],
-            distance: 1640,
-            duration: 1720,
-            avgSpeed: 57.2,
-            maxSpeed: 110,
-            totalHalts: 45,
-            returnTrain: '12920',
-            coachPosition: 'Engine-H1-A1-A2-B1-B2-B3-B4-PC-S1-S2-S3-S4-S5-S6-S7-S8-S9-S10-S11-S12-DL1'
-          },
-          route: [
-            {
-              sequence: 1,
-              station: { code: 'INDB', name: 'Indore Junction' },
-              arrival: null,
-              departure: '23:55',
-              arrivalDay: 1,
-              departureDay: 1,
-              distance: 0,
-              isHalt: true,
-              platform: '4',
-              speedToNextStationKmph: 55
-            },
-            {
-              sequence: 2,
-              station: { code: 'DWX', name: 'Dewas Junction' },
-              arrival: '00:26',
-              departure: '00:28',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 39,
-              isHalt: true,
-              platform: '2',
-              speedToNextStationKmph: 60
-            },
-            {
-              sequence: 3,
-              station: { code: 'UJN', name: 'Ujjain Junction' },
-              arrival: '01:10',
-              departure: '01:25',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 79,
-              isHalt: true,
-              platform: '1',
-              speedToNextStationKmph: 65
-            },
-            {
-              sequence: 4,
-              station: { code: 'MKC', name: 'Maksi Junction' },
-              arrival: '02:00',
-              departure: '02:02',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 121,
-              isHalt: true,
-              platform: '1',
-              speedToNextStationKmph: 70
-            },
-            {
-              sequence: 5,
-              station: { code: 'BPL', name: 'Bhopal Junction' },
-              arrival: '07:15',
-              departure: '07:25',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 263,
-              isHalt: true,
-              platform: '3',
-              speedToNextStationKmph: 85
-            },
-            {
-              sequence: 6,
-              station: { code: 'BINA', name: 'Bina Junction' },
-              arrival: '09:20',
-              departure: '09:25',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 401,
-              isHalt: true,
-              platform: '3',
-              speedToNextStationKmph: 90
-            },
-            {
-              sequence: 7,
-              station: { code: 'VGLJ', name: 'V Lakshmibai Jhansi' },
-              arrival: '11:45',
-              departure: '11:55',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 554,
-              isHalt: true,
-              platform: '4',
-              speedToNextStationKmph: 95
-            },
-            {
-              sequence: 8,
-              station: { code: 'GWL', name: 'Gwalior Junction' },
-              arrival: '13:00',
-              departure: '13:05',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 651,
-              isHalt: true,
-              platform: '2',
-              speedToNextStationKmph: 100
-            },
-            {
-              sequence: 9,
-              station: { code: 'AGC', name: 'Agra Cantt' },
-              arrival: '14:40',
-              departure: '14:45',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 770,
-              isHalt: true,
-              platform: '2',
-              speedToNextStationKmph: 105
-            },
-            {
-              sequence: 10,
-              station: { code: 'MTJ', name: 'Mathura Junction' },
-              arrival: '15:30',
-              departure: '15:35',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 823,
-              isHalt: true,
-              platform: '2',
-              speedToNextStationKmph: 105
-            },
-            {
-              sequence: 11,
-              station: { code: 'NDLS', name: 'New Delhi' },
-              arrival: '17:50',
-              departure: '18:05',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 964,
-              isHalt: true,
-              platform: '7',
-              speedToNextStationKmph: 95
-            },
-            {
-              sequence: 12,
-              station: { code: 'UMB', name: 'Ambala Cantt' },
-              arrival: '21:10',
-              departure: '21:20',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 1163,
-              isHalt: true,
-              platform: '6',
-              speedToNextStationKmph: 90
-            },
-            {
-              sequence: 13,
-              station: { code: 'LDH', name: 'Ludhiana Junction' },
-              arrival: '22:50',
-              departure: '23:00',
-              arrivalDay: 2,
-              departureDay: 2,
-              distance: 1277,
-              isHalt: true,
-              platform: '3',
-              speedToNextStationKmph: 85
-            },
-            {
-              sequence: 14,
-              station: { code: 'JAT', name: 'Jammu Tawi' },
-              arrival: '03:25',
-              departure: '03:35',
-              arrivalDay: 3,
-              departureDay: 3,
-              distance: 1563,
-              isHalt: true,
-              platform: '1',
-              speedToNextStationKmph: 70
-            },
-            {
-              sequence: 15,
-              station: { code: 'SVDK', name: 'Shri Mata Vaishno Devi Katra' },
-              arrival: '06:35',
-              departure: null,
-              arrivalDay: 3,
-              departureDay: 3,
-              distance: 1640,
-              isHalt: true,
-              platform: '2',
-              speedToNextStationKmph: 0
-            }
-          ]
-        },
+        isScheduledTimetableOnly: true,
+        data: PUBLISHED_TIMETABLES[cleanNumber],
         meta: {
-          traceId: '550e8400-e29b-41d4-a716-446655440000',
           timestamp: new Date().toISOString(),
-          executionTime: 38,
-          source: 'database'
-        }
+          source: 'published-railway-timetable',
+        },
       });
     }
 
-    // 2. 12952 - Mumbai Rajdhani Express (Premier Rajdhani Route via Vadodara BRC)
-    if (cleanNumber === '12952') {
-      return res.json({
-        success: true,
-        data: {
-          train: {
-            number: '12952',
-            name: 'Mumbai Rajdhani Express',
-            type: 'Rajdhani Express',
-            category: 'Rajdhani',
-            source: { code: 'NDLS', name: 'New Delhi' },
-            destination: { code: 'MMCT', name: 'Mumbai Central' },
-            runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-            distance: 1384,
-            duration: 935,
-            avgSpeed: 88.5,
-            maxSpeed: 130,
-            totalHalts: 7,
-            returnTrain: '12951',
-            coachPosition: 'ENG-EOG-H1-A1-A2-A3-A4-A5-B1-B2-B3-B4-B5-B6-B7-B8-B9-B10-B11-PC-EOG'
-          },
-          route: [
-            { sequence: 1, station: { code: 'NDLS', name: 'New Delhi' }, arrival: null, departure: '16:55', arrivalDay: 1, departureDay: 1, distance: 0, isHalt: true, platform: '3', speedToNextStationKmph: 110 },
-            { sequence: 2, station: { code: 'KOTA', name: 'Kota Junction' }, arrival: '21:30', departure: '21:40', arrivalDay: 1, departureDay: 1, distance: 465, isHalt: true, platform: '1', speedToNextStationKmph: 120 },
-            { sequence: 3, station: { code: 'RTM', name: 'Ratlam Junction' }, arrival: '00:35', departure: '00:38', arrivalDay: 2, departureDay: 2, distance: 732, isHalt: true, platform: '4', speedToNextStationKmph: 115 },
-            { sequence: 4, station: { code: 'BRC', name: 'Vadodara Junction' }, arrival: '03:48', departure: '03:58', arrivalDay: 2, departureDay: 2, distance: 993, isHalt: true, platform: '2', speedToNextStationKmph: 115 },
-            { sequence: 5, station: { code: 'ST', name: 'Surat' }, arrival: '05:13', departure: '05:18', arrivalDay: 2, departureDay: 2, distance: 1122, isHalt: true, platform: '1', speedToNextStationKmph: 110 },
-            { sequence: 6, station: { code: 'BVI', name: 'Borivali' }, arrival: '07:56', departure: '07:58', arrivalDay: 2, departureDay: 2, distance: 1354, isHalt: true, platform: '7', speedToNextStationKmph: 60 },
-            { sequence: 7, station: { code: 'MMCT', name: 'Mumbai Central' }, arrival: '08:35', departure: null, arrivalDay: 2, departureDay: 2, distance: 1384, isHalt: true, platform: '1', speedToNextStationKmph: 0 }
-          ]
-        },
-        meta: {
-          traceId: '992d1303-e29b-41d4-d812-129520000000',
-          timestamp: new Date().toISOString(),
-          executionTime: 24,
-          source: 'database'
-        }
-      });
-    }
-
-    // 3. 12565 - Bihar Sampark Kranti Express
-    if (cleanNumber === '12565') {
-      return res.json({
-        success: true,
-        data: {
-          train: {
-            number: '12565',
-            name: 'Bihar Sampark Kranti Express',
-            type: 'Superfast Express',
-            category: 'Sampark Kranti',
-            source: { code: 'DBG', name: 'Darbhanga Junction' },
-            destination: { code: 'NDLS', name: 'New Delhi' },
-            runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-            distance: 1163,
-            duration: 1265,
-            avgSpeed: 55.2,
-            maxSpeed: 110,
-            totalHalts: 11,
-            returnTrain: '12566',
-            coachPosition: 'Engine-EOG-H1-A1-A2-B1-B2-B3-B4-B5-B6-M1-PC-S1-S2-S3-S4-S5-S6-GS-GS-EOG'
-          },
-          route: [
-            { sequence: 1, station: { code: 'DBG', name: 'Darbhanga Junction' }, arrival: null, departure: '08:25', arrivalDay: 1, departureDay: 1, distance: 0, isHalt: true, platform: '1', speedToNextStationKmph: 45 },
-            { sequence: 2, station: { code: 'SPJ', name: 'Samastipur Junction' }, arrival: '09:15', departure: '09:35', arrivalDay: 1, departureDay: 1, distance: 37, isHalt: true, platform: '2', speedToNextStationKmph: 60 },
-            { sequence: 3, station: { code: 'MFP', name: 'Muzaffarpur Junction' }, arrival: '10:25', departure: '10:30', arrivalDay: 1, departureDay: 1, distance: 89, isHalt: true, platform: '3', speedToNextStationKmph: 65 },
-            { sequence: 4, station: { code: 'HJP', name: 'Hajipur Junction' }, arrival: '11:30', departure: '11:33', arrivalDay: 1, departureDay: 1, distance: 143, isHalt: true, platform: '3', speedToNextStationKmph: 55 },
-            { sequence: 5, station: { code: 'SEE', name: 'Sonpur Junction' }, arrival: '11:43', departure: '11:45', arrivalDay: 1, departureDay: 1, distance: 148, isHalt: true, platform: '3', speedToNextStationKmph: 60 },
-            { sequence: 6, station: { code: 'CPR', name: 'Chhapra Junction' }, arrival: '12:45', departure: '12:50', arrivalDay: 1, departureDay: 1, distance: 202, isHalt: true, platform: '1', speedToNextStationKmph: 70 },
-            { sequence: 7, station: { code: 'SV', name: 'Siwan Junction' }, arrival: '13:40', departure: '13:45', arrivalDay: 1, departureDay: 1, distance: 263, isHalt: true, platform: '3', speedToNextStationKmph: 75 },
-            { sequence: 8, station: { code: 'GKP', name: 'Gorakhpur Junction' }, arrival: '15:50', departure: '16:05', arrivalDay: 1, departureDay: 1, distance: 382, isHalt: true, platform: '1', speedToNextStationKmph: 85 },
-            { sequence: 9, station: { code: 'ASH', name: 'Aishbagh (Lucknow)' }, arrival: '20:50', departure: '21:00', arrivalDay: 1, departureDay: 1, distance: 652, isHalt: true, platform: '1', speedToNextStationKmph: 80 },
-            { sequence: 10, station: { code: 'CNB', name: 'Kanpur Central' }, arrival: '22:48', departure: '22:58', arrivalDay: 1, departureDay: 1, distance: 723, isHalt: true, platform: '5', speedToNextStationKmph: 95 },
-            { sequence: 11, station: { code: 'NDLS', name: 'New Delhi' }, arrival: '05:30', departure: null, arrivalDay: 2, departureDay: 2, distance: 1163, isHalt: true, platform: '14', speedToNextStationKmph: 0 }
-          ]
-        },
-        meta: {
-          traceId: '882c1202-e29b-41d4-c812-446655440222',
-          timestamp: new Date().toISOString(),
-          executionTime: 25,
-          source: 'database'
-        }
-      });
-    }
-
-    // Default dynamic timetable for any requested train
-    const fallbackTrainName = cleanNumber === '12106'
-      ? 'Vidarbha Superfast Express'
-      : cleanNumber === '12860'
-        ? 'Gitanjali Superfast Express'
-        : cleanNumber === '12290'
-          ? 'Nagpur Mumbai CSMT Duronto Express'
-          : `Express Train ${cleanNumber}`;
-
-    return res.json({
-      success: true,
-      data: {
-        train: {
-          number: cleanNumber,
-          name: fallbackTrainName,
-          type: 'Superfast Express',
-          category: 'Express',
-          source: { code: 'INDB', name: 'Indore Junction' },
-          destination: { code: 'CSMT', name: 'Mumbai CSMT' },
-          runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-          distance: 750,
-          duration: 720,
-          avgSpeed: 62.0,
-          maxSpeed: 110,
-          totalHalts: 12,
-          returnTrain: `${parseInt(cleanNumber, 10) - 1 || '12961'}`,
-          coachPosition: 'Engine-SLR-GS-S1-S2-S3-S4-B1-B2-B3-A1-GS-SLR'
-        },
-        route: [
-          { sequence: 1, station: { code: 'INDB', name: 'Indore Junction' }, arrival: null, departure: '08:00', arrivalDay: 1, departureDay: 1, distance: 0, isHalt: true, platform: '1', speedToNextStationKmph: 75 },
-          { sequence: 2, station: { code: 'UJN', name: 'Ujjain Junction' }, arrival: '09:00', departure: '09:05', arrivalDay: 1, departureDay: 1, distance: 55, isHalt: true, platform: '1', speedToNextStationKmph: 80 },
-          { sequence: 3, station: { code: 'MKSM', name: 'Maksi' }, arrival: '09:48', departure: '09:50', arrivalDay: 1, departureDay: 1, distance: 96, isHalt: true, platform: '1', speedToNextStationKmph: 85 },
-          { sequence: 4, station: { code: 'BSL', name: 'Bhusaval Junction' }, arrival: '10:05', departure: '10:10', arrivalDay: 1, departureDay: 1, distance: 139, isHalt: true, platform: '3', speedToNextStationKmph: 80 },
-          { sequence: 5, station: { code: 'JL', name: 'Jalgaon Junction' }, arrival: '10:38', departure: '10:40', arrivalDay: 1, departureDay: 1, distance: 163, isHalt: true, platform: '2', speedToNextStationKmph: 85 },
-          { sequence: 6, station: { code: 'MMR', name: 'Manmad Junction' }, arrival: '12:48', departure: '12:50', arrivalDay: 1, departureDay: 1, distance: 323, isHalt: true, platform: '3', speedToNextStationKmph: 85 },
-          { sequence: 7, station: { code: 'NK', name: 'Nashik Road' }, arrival: '13:48', departure: '13:50', arrivalDay: 1, departureDay: 1, distance: 396, isHalt: true, platform: '3', speedToNextStationKmph: 75 },
-          { sequence: 8, station: { code: 'IGP', name: 'Igatpuri' }, arrival: '15:05', departure: '15:10', arrivalDay: 1, departureDay: 1, distance: 447, isHalt: true, platform: '3', speedToNextStationKmph: 65 },
-          { sequence: 9, station: { code: 'KYN', name: 'Kalyan Junction' }, arrival: '17:12', departure: '17:15', arrivalDay: 1, departureDay: 1, distance: 529, isHalt: true, platform: '5', speedToNextStationKmph: 60 },
-          { sequence: 10, station: { code: 'TNA', name: 'Thane' }, arrival: '17:35', departure: '17:37', arrivalDay: 1, departureDay: 1, distance: 547, isHalt: true, platform: '6', speedToNextStationKmph: 50 },
-          { sequence: 11, station: { code: 'DR', name: 'Dadar Central' }, arrival: '18:02', departure: '18:05', arrivalDay: 1, departureDay: 1, distance: 571, isHalt: true, platform: '12', speedToNextStationKmph: 40 },
-          { sequence: 12, station: { code: 'CSMT', name: 'Mumbai CSMT' }, arrival: '18:30', departure: null, arrivalDay: 1, departureDay: 1, distance: 580, isHalt: true, platform: '18', speedToNextStationKmph: 0 }
-        ]
-      },
-      meta: {
-        traceId: `992d1303-e29b-41d4-d812-${cleanNumber.padStart(12, '0')}`,
-        timestamp: new Date().toISOString(),
-        executionTime: 22,
-        source: 'database'
-      }
+    return res.status(railKitKey ? 404 : 503).json({
+      success: false,
+      errorCode: railKitKey ? 'TRAIN_TIMETABLE_NOT_FOUND' : 'TIMETABLE_API_KEY_REQUIRED',
+      error: railKitKey
+        ? `No scheduled timetable found for Train #${cleanNumber} on RailKit. Please verify the 5-digit train number.`
+        : `RAILKIT_API_KEY is not configured on the server. Please set RAILKIT_API_KEY in .env to fetch train timetables via https://railkit.in/.`,
+      officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
     });
   });
 
-  // 3e. RailRadar Live Train Status (GET https://api.railradar.in/v1/trains/{number}/live)
+  // 3e. Live Train Status (Route alias using RailKit trackTrain)
   app.get('/api/railradar/train/live/:trainNumber', async (req: Request, res: Response) => {
     const rawNumber = String(req.params.trainNumber || '').trim();
     const cleanNumber = rawNumber.replace(/[^0-9]/g, '');
 
-    if (!cleanNumber) {
-      return res.status(400).json({ success: false, error: 'Train number is required' });
+    if (!cleanNumber || cleanNumber.length !== 5) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'INVALID_TRAIN_NUMBER',
+        error: 'Please enter a valid 5-digit Indian Railways train number (e.g. 12919, 12952, 12565).',
+      });
     }
 
-    if (RAILRADAR_API_KEY) {
-      try {
-        const upstreamUrl = `https://api.railradar.in/v1/trains/${cleanNumber}/live`;
-        const upstreamRes = await fetch(upstreamUrl, {
-          headers: {
-            'Authorization': `Bearer ${RAILRADAR_API_KEY}`,
-            'Accept': 'application/json',
+    const railKitKey = ensureRailKitConfigured();
+    if (!railKitKey) {
+      return res.status(503).json({
+        success: false,
+        errorCode: 'RAILKIT_API_KEY_MISSING',
+        error: 'Live Train Status requires RAILKIT_API_KEY to be configured on the server (https://railkit.in/).',
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+      });
+    }
+
+    try {
+      const todayIst = getIstDateParts();
+      const result = await railKitTrackTrain(cleanNumber, todayIst.ddmmyyyy);
+      if (result?.success && result.data) {
+        return res.json({
+          success: true,
+          data: result.data,
+          meta: {
+            timestamp: new Date().toISOString(),
+            source: 'railkit-api',
           },
         });
-        if (upstreamRes.ok) {
-          const json = await upstreamRes.json();
-          if (json && json.success) {
-            return res.json(json);
-          }
-        }
-      } catch (err) {
-        console.warn('RailRadar Live Train API upstream failed, using realistic fallback:', err);
       }
+
+      return res.status(404).json({
+        success: false,
+        errorCode: 'LIVE_TRAIN_NOT_FOUND',
+        error: result?.error || `No active live status found for Train #${cleanNumber} on ${todayIst.ddmmyyyy}.`,
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+      });
+    } catch (err: any) {
+      return res.status(504).json({
+        success: false,
+        errorCode: 'NETWORK_ERROR',
+        error: `Unable to reach RailKit live train service: ${err?.message || 'network error'}`,
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+      });
     }
-
-    // High fidelity fallback matching user's exact RailRadar payload for 12919
-    const nowIso = new Date().toISOString();
-    const todayStr = nowIso.split('T')[0];
-
-    const fallbackTrainName = cleanNumber === '12919'
-      ? 'Malwa SF Express'
-      : cleanNumber === '12952'
-        ? 'Mumbai Rajdhani Express'
-        : cleanNumber === '12565'
-          ? 'Bihar Sampark Kranti Express'
-          : cleanNumber === '22436'
-            ? 'Vande Bharat Express'
-            : `Express Train ${cleanNumber}`;
-
-    const srcCode = cleanNumber === '12919' ? 'INDB' : cleanNumber === '12952' ? 'NDLS' : 'DBG';
-    const srcName = cleanNumber === '12919' ? 'Indore Junction' : cleanNumber === '12952' ? 'New Delhi' : 'Darbhanga Junction';
-    const destCode = cleanNumber === '12919' ? 'SVDK' : cleanNumber === '12952' ? 'MMCT' : 'NDLS';
-    const destName = cleanNumber === '12919' ? 'Shri Mata Vaishno Devi Katra' : cleanNumber === '12952' ? 'Mumbai Central' : 'New Delhi';
-
-    return res.json({
-      success: true,
-      data: {
-        trainNumber: cleanNumber,
-        trainName: fallbackTrainName,
-        startDate: todayStr,
-        lastUpdatedAt: nowIso,
-        status: 'running',
-        delayMinutes: 12,
-        train: {
-          number: cleanNumber,
-          name: fallbackTrainName,
-          type: 'Superfast Express',
-          category: 'Superfast',
-          source: { code: srcCode, name: srcName },
-          destination: { code: destCode, name: destName },
-          runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-          distance: 1640,
-          duration: 1720,
-          avgSpeed: 57.2,
-          maxSpeed: 110,
-          totalHalts: 45,
-          returnTrain: `${parseInt(cleanNumber, 10) + 1}`,
-        },
-        currentLocation: {
-          stationCode: 'UJN',
-          sequence: 2,
-          status: 'departed',
-          isHalt: true,
-          isDiverted: false,
-          isActualPosition: true,
-          segmentProgress: 0.45,
-          speedKmh: 65.5,
-          bearingDegrees: 180,
-        },
-        previousHalt: {
-          stationCode: srcCode,
-          stationName: srcName,
-          sequence: 1,
-          distance: 0,
-        },
-        nextHalt: {
-          stationCode: 'UJN',
-          stationName: 'Ujjain Junction',
-          sequence: 2,
-          distance: 55,
-        },
-        exceptions: [
-          {
-            type: 'DIVERTED',
-            message: 'Train is diverted between UJN (Ujjain Junction) and MKSM (Maksi)',
-            diverted: {
-              from: { code: 'UJN', name: 'Ujjain Junction', sequence: 2 },
-              to: { code: 'MKSM', name: 'Maksi', sequence: 3 },
-              divertedStations: [
-                { order: 0, sequence: 3, stationCode: 'PLW', stationName: 'Pingleshwar', lat: 23.19, lng: 75.95, isHalt: false, status: 'departed', scheduledArrival: `${todayStr}T01:15:00+05:30`, scheduledDeparture: `${todayStr}T01:15:00+05:30`, actualArrival: `${todayStr}T01:27:00+05:30`, actualDeparture: `${todayStr}T01:27:00+05:30`, delayArrival: 12, delayDeparture: 12, platform: null, platformChanged: false, distance: 68 },
-                { order: 1, sequence: 4, stationCode: 'TJP', stationName: 'Tajpur', lat: 23.2, lng: 76.08, isHalt: true, status: 'upcoming', scheduledArrival: `${todayStr}T01:45:00+05:30`, scheduledDeparture: `${todayStr}T01:50:00+05:30`, actualArrival: null, actualDeparture: null, delayArrival: null, delayDeparture: null, platform: '1', platformChanged: false, distance: 82 },
-              ],
-              skippedStations: [
-                { code: 'MKSM', name: 'Maksi', scheduledSequence: 3, scheduledArrival: `${todayStr}T02:10:00+05:30`, scheduledDeparture: `${todayStr}T02:12:00+05:30` },
-              ],
-              hasReversal: false,
-              distanceKm: 41,
-            },
-            partiallyCancelled: null,
-            rescheduled: null,
-          },
-        ],
-        route: [
-          {
-            sequence: 1,
-            stationCode: 'INDB',
-            stationName: 'Indore Junction',
-            isHalt: true,
-            lat: 22.72,
-            lng: 75.86,
-            scheduledArrival: null,
-            scheduledDeparture: `${todayStr}T23:55:00+05:30`,
-            actualArrival: null,
-            actualDeparture: `${todayStr}T00:07:00+05:30`,
-            delayArrival: null,
-            delayDeparture: 12,
-            status: 'departed',
-            distance: 0,
-            speedToNextStationKmph: 55,
-            platform: '4',
-          },
-          {
-            sequence: 2,
-            stationCode: 'UJN',
-            stationName: 'Ujjain Junction',
-            isHalt: true,
-            lat: 23.17,
-            lng: 75.78,
-            scheduledArrival: `${todayStr}T00:55:00+05:30`,
-            scheduledDeparture: `${todayStr}T01:00:00+05:30`,
-            actualArrival: `${todayStr}T01:07:00+05:30`,
-            actualDeparture: `${todayStr}T01:12:00+05:30`,
-            delayArrival: 12,
-            delayDeparture: 12,
-            status: 'departed',
-            distance: 55,
-            speedToNextStationKmph: 60,
-            platform: '1',
-          },
-          {
-            sequence: 3,
-            stationCode: 'MKSM',
-            stationName: 'Maksi',
-            isHalt: true,
-            lat: 23.21,
-            lng: 76.22,
-            scheduledArrival: `${todayStr}T02:10:00+05:30`,
-            scheduledDeparture: `${todayStr}T02:12:00+05:30`,
-            actualArrival: null,
-            actualDeparture: null,
-            delayArrival: null,
-            delayDeparture: null,
-            status: 'upcoming',
-            distance: 96,
-            speedToNextStationKmph: 62,
-            platform: '3',
-          },
-          {
-            sequence: 4,
-            stationCode: 'BPL',
-            stationName: 'Bhopal Junction',
-            isHalt: true,
-            lat: 23.25,
-            lng: 77.41,
-            scheduledArrival: `${todayStr}T07:15:00+05:30`,
-            scheduledDeparture: `${todayStr}T07:25:00+05:30`,
-            actualArrival: null,
-            actualDeparture: null,
-            delayArrival: null,
-            delayDeparture: null,
-            status: 'upcoming',
-            distance: 263,
-            speedToNextStationKmph: 85,
-            platform: '3',
-          },
-          {
-            sequence: 5,
-            stationCode: 'VGLJ',
-            stationName: 'V Lakshmibai Jhansi',
-            isHalt: true,
-            lat: 25.44,
-            lng: 78.58,
-            scheduledArrival: `${todayStr}T11:45:00+05:30`,
-            scheduledDeparture: `${todayStr}T11:55:00+05:30`,
-            actualArrival: null,
-            actualDeparture: null,
-            delayArrival: null,
-            delayDeparture: null,
-            status: 'upcoming',
-            distance: 554,
-            speedToNextStationKmph: 95,
-            platform: '4',
-          },
-          {
-            sequence: 6,
-            stationCode: 'NDLS',
-            stationName: 'New Delhi',
-            isHalt: true,
-            lat: 28.64,
-            lng: 77.22,
-            scheduledArrival: `${todayStr}T17:50:00+05:30`,
-            scheduledDeparture: `${todayStr}T18:05:00+05:30`,
-            actualArrival: null,
-            actualDeparture: null,
-            delayArrival: null,
-            delayDeparture: null,
-            status: 'upcoming',
-            distance: 964,
-            speedToNextStationKmph: 95,
-            platform: '7',
-          },
-          {
-            sequence: 7,
-            stationCode: 'SVDK',
-            stationName: 'Shri Mata Vaishno Devi Katra',
-            isHalt: true,
-            lat: 32.99,
-            lng: 74.95,
-            scheduledArrival: `${todayStr}T06:35:00+05:30`,
-            scheduledDeparture: null,
-            actualArrival: null,
-            actualDeparture: null,
-            delayArrival: null,
-            delayDeparture: null,
-            status: 'upcoming',
-            distance: 1640,
-            speedToNextStationKmph: 0,
-            platform: '2',
-          },
-        ],
-        isLive: true,
-      },
-      meta: {
-        traceId: '550e8400-e29b-41d4-a716-446655440000',
-        timestamp: nowIso,
-        executionTime: 38,
-        source: 'database',
-      },
-    });
   });
 
-  // 3f. RailRadar Live Station Board (GET https://api.railradar.in/v1/stations/{code}/live?hours=4)
-  app.get('/api/railradar/station/live/:stationCode', async (req: Request, res: Response) => {
-    const rawCode = String(req.params.stationCode || '').trim().toUpperCase();
-    const hours = parseInt(String(req.query.hours || '4'), 10) || 4;
+  // 3f. Live Station Board via RailKit liveAtStation (Supports Station Name or Station Code)
+  const handleLiveStationRequest = async (req: Request, res: Response) => {
+    const rawInput = String(req.params.stationCode || req.query.station || '').trim();
+    const rawHours = parseInt(String(req.query.hours || req.query.hrs || '4'), 10) || 4;
+    const validHours: 2 | 4 | 8 = rawHours <= 2 ? 2 : rawHours <= 4 ? 4 : 8;
 
-    if (!rawCode) {
-      return res.status(400).json({ success: false, error: 'Station code is required (e.g. INDB, NDLS, CSMT)' });
+    if (!rawInput) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'INVALID_STATION_CODE',
+        error: 'Please enter a valid station name or station code (e.g. Indore, INDB, New Delhi, NDLS, CSMT).',
+      });
     }
 
-    if (RAILRADAR_API_KEY) {
-      try {
-        const upstreamUrl = `https://api.railradar.in/v1/stations/${rawCode}/live?hours=${hours}`;
-        const upstreamRes = await fetch(upstreamUrl, {
-          headers: {
-            'Authorization': `Bearer ${RAILRADAR_API_KEY}`,
-            'Accept': 'application/json',
-          },
+    const railKitKey = ensureRailKitConfigured();
+    if (!railKitKey) {
+      return res.status(503).json({
+        success: false,
+        errorCode: 'STATION_API_KEY_MISSING',
+        error: 'Live Station Board requires RAILKIT_API_KEY to be configured on the server (https://railkit.in/). We never invent train movements, timings, or platform numbers.',
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+      });
+    }
+
+    const resolved = await resolveStationWithRailKit(rawInput);
+    const stationCode = resolved.code;
+
+    if (!stationCode || !/^[A-Z]{1,5}$/.test(stationCode)) {
+      return res.status(400).json({
+        success: false,
+        errorCode: 'INVALID_STATION_CODE',
+        error: `Could not resolve "${rawInput}" to a valid Indian Railways station code. Try entering a station code like NDLS, INDB, CSMT, BPL, or HWH.`,
+      });
+    }
+
+    try {
+      const result = await railKitLiveAtStation(stationCode, validHours);
+
+      if (!result?.success || !result.data) {
+        const errMsg =
+          result?.error ||
+          `Unable to fetch live station board for ${resolved.name} (${stationCode}) from RailKit.`;
+        const isAuth = /invalid api key|inactive|not configured/i.test(errMsg);
+        const isRateLimit = /limit exceeded|429/i.test(errMsg);
+        const status = isAuth ? 401 : isRateLimit ? 429 : 404;
+
+        return res.status(status).json({
+          success: false,
+          errorCode: isAuth ? 'API_AUTH_FAILED' : isRateLimit ? 'RATE_LIMITED' : 'STATION_LIVE_UNAVAILABLE',
+          station: { code: stationCode, name: resolved.name },
+          error: errMsg,
+          officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
         });
-        if (upstreamRes.ok) {
-          const json = await upstreamRes.json();
-          if (json && json.success) {
-            return res.json(json);
-          }
-        }
-      } catch (err) {
-        console.warn('RailRadar Live Station upstream failed, using fallback:', err);
       }
+
+      const d = result.data;
+      const rawTrains = Array.isArray(d.trains) ? d.trains : [];
+
+      // Extract station name from summary if available (e.g. "7 Trains departing from/arriving at INDB- INDORE JN in next 4 Hrs.")
+      let stationName = resolved.name;
+      const summaryMatch = String(d.summary || '').match(/at\s+[A-Z0-9]+\s*-\s*([^.]+?)(?:\s+in\s+next\b|\.)/i);
+      if (summaryMatch && summaryMatch[1]) {
+        stationName = summaryMatch[1].trim();
+      }
+
+      const nowIst = new Date(Date.now() + 5.5 * 3600 * 1000);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const fromTime = `${pad(nowIst.getUTCHours())}:${pad(nowIst.getUTCMinutes())}`;
+      const toTime = `${pad((nowIst.getUTCHours() + validHours) % 24)}:${pad(nowIst.getUTCMinutes())}`;
+
+      return res.json({
+        success: true,
+        data: {
+          station: {
+            code: stationCode,
+            name: stationName,
+          },
+          summary: d.summary || `${rawTrains.length} trains at ${stationName} (${stationCode}) in next ${validHours} hours`,
+          window: {
+            from: fromTime,
+            to: toTime,
+            hoursBack: 0,
+            hoursAhead: validHours,
+          },
+          count: rawTrains.length,
+          trains: rawTrains.map((t: any, idx: number) => {
+            const arrDelayMin = parseRailKitDelayMinutes(t.arrival?.delay);
+            const depDelayMin = parseRailKitDelayMinutes(t.departure?.delay);
+            const delayMinutes = Math.max(arrDelayMin, depDelayMin);
+
+            const schArr =
+              !t.arrival?.scheduled || t.arrival.scheduled === 'SRC'
+                ? null
+                : String(t.arrival.scheduled);
+            const schDep =
+              !t.departure?.scheduled || t.departure.scheduled === 'DSTN'
+                ? null
+                : String(t.departure.scheduled);
+
+            const actArr =
+              !t.arrival?.actual || t.arrival.actual === 'SRC'
+                ? schArr
+                : String(t.arrival.actual);
+            const actDep =
+              !t.departure?.actual || t.departure.actual === 'DSTN'
+                ? schDep
+                : String(t.departure.actual);
+
+            return {
+              train: {
+                number: String(t.trainNo || ''),
+                name: String(t.trainName || `Train #${t.trainNo || ''}`),
+                type: String(t.trainType || 'Express'),
+                source: t.sourceName ? `${t.sourceName} (${t.source})` : String(t.source || '-'),
+                destination: t.destName ? `${t.destName} (${t.dest})` : String(t.dest || '-'),
+                runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+              },
+              stop: {
+                sequence: idx + 1,
+                arrival: schArr,
+                departure: schDep,
+                day: 1,
+                distance: 0,
+              },
+              live: {
+                type: t.cancelled ? 'cancelled' : delayMinutes > 0 ? 'en-route' : 'at-station',
+                expectedArrivalTime: actArr || undefined,
+                expectedDepartureTime: actDep || undefined,
+                platform: t.platform ? String(t.platform) : undefined,
+                delayMinutes,
+              },
+            };
+          }),
+        },
+        meta: {
+          timestamp: new Date().toISOString(),
+          source: 'railkit-api',
+        },
+      });
+    } catch (err: any) {
+      return res.status(502).json({
+        success: false,
+        errorCode: 'RAILKIT_STATION_ERROR',
+        station: { code: stationCode, name: resolved.name },
+        error: `RailKit Live Station request failed: ${err?.message || 'network error'}`,
+        officialEnquiryUrl: 'https://enquiry.indianrail.gov.in/mntes/',
+      });
     }
+  };
 
-    const matchedStation = FALLBACK_STATIONS.find((s) => s.StationCode === rawCode) || {
-      NameEn: rawCode === 'INDB' ? 'INDORE JN' : `${rawCode} JN`,
-      StationCode: rawCode,
-    };
+  app.get('/api/railradar/station/live/:stationCode', handleLiveStationRequest);
+  app.get('/api/train/live-station/:stationCode', handleLiveStationRequest);
 
-    const now = new Date();
-    const nowMs = now.getTime();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const fromTime = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    const toTime = `${pad((now.getHours() + hours) % 24)}:${pad(now.getMinutes())}`;
-
-    // Station-specific and dynamic trains list
-    let trainsList: any[] = [];
-
-    if (rawCode === 'NDLS') {
-      trainsList = [
-        {
-          train: { number: '12002', name: 'Bhopal Shatabdi Express', type: 'Shatabdi', source: 'NDLS', destination: 'RKMP', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '06:00', day: 1, distance: 0 },
-          live: { type: 'at-station', expectedDepartureTime: new Date(nowMs + 15 * 60000).toISOString(), platform: '1', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12952', name: 'Mumbai Central Rajdhani', type: 'Rajdhani', source: 'NDLS', destination: 'MMCT', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '16:55', day: 1, distance: 0 },
-          live: { type: 'scheduled', expectedDepartureTime: new Date(nowMs + 50 * 60000).toISOString(), platform: '3', delayMinutes: 0 },
-        },
-        {
-          train: { number: '22436', name: 'Vande Bharat Express', type: 'Vande Bharat', source: 'NDLS', destination: 'BSB', runDays: ['tue', 'wed', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '06:00', day: 1, distance: 0 },
-          live: { type: 'at-station', expectedDepartureTime: new Date(nowMs + 30 * 60000).toISOString(), platform: '16', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12302', name: 'Howrah Rajdhani Express', type: 'Rajdhani', source: 'NDLS', destination: 'HWH', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '16:50', day: 1, distance: 0 },
-          live: { type: 'scheduled', expectedDepartureTime: new Date(nowMs + 85 * 60000).toISOString(), platform: '2', delayMinutes: 5 },
-        },
-      ];
-    } else if (rawCode === 'CSMT') {
-      trainsList = [
-        {
-          train: { number: '12137', name: 'Punjab Mail', type: 'Superfast Mail', source: 'CSMT', destination: 'FZR', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '19:35', day: 1, distance: 0 },
-          live: { type: 'at-station', expectedDepartureTime: new Date(nowMs + 20 * 60000).toISOString(), platform: '18', delayMinutes: 0 },
-        },
-        {
-          train: { number: '22221', name: 'CSMT Rajdhani Express', type: 'Rajdhani', source: 'CSMT', destination: 'NZM', runDays: ['mon', 'wed', 'fri', 'sat'] },
-          stop: { sequence: 1, arrival: null, departure: '16:10', day: 1, distance: 0 },
-          live: { type: 'scheduled', expectedDepartureTime: new Date(nowMs + 65 * 60000).toISOString(), platform: '16', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12127', name: 'Mumbai - Pune Intercity', type: 'Superfast', source: 'CSMT', destination: 'PUNE', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '06:40', day: 1, distance: 0 },
-          live: { type: 'at-station', expectedDepartureTime: new Date(nowMs + 10 * 60000).toISOString(), platform: '8', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12859', name: 'Gitanjali Express', type: 'Superfast', source: 'CSMT', destination: 'HWH', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '06:00', day: 1, distance: 0 },
-          live: { type: 'en-route', expectedDepartureTime: new Date(nowMs + 85 * 60000).toISOString(), platform: '14', delayMinutes: 12 },
-        },
-      ];
-    } else if (rawCode === 'INDB') {
-      trainsList = [
-        {
-          train: { number: '12919', name: 'Malwa SF Express', type: 'Superfast Express', source: 'INDB', destination: 'SVDK', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '12:15', day: 1, distance: 0 },
-          live: { type: 'at-station', expectedDepartureTime: new Date(nowMs + 25 * 60000).toISOString(), platform: '4', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12962', name: 'Avantika SF Express', type: 'Superfast Express', source: 'INDB', destination: 'MMCT', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '17:40', day: 1, distance: 0 },
-          live: { type: 'scheduled', expectedDepartureTime: new Date(nowMs + 75 * 60000).toISOString(), platform: '1', delayMinutes: 5 },
-        },
-        {
-          train: { number: '20911', name: 'Vande Bharat Express', type: 'Vande Bharat', source: 'INDB', destination: 'BPL', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'] },
-          stop: { sequence: 1, arrival: null, departure: '06:10', day: 1, distance: 0 },
-          live: { type: 'upcoming', expectedDepartureTime: new Date(nowMs + 140 * 60000).toISOString(), platform: '3', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12920', name: 'Malwa SF Express (Return)', type: 'Superfast Express', source: 'SVDK', destination: 'INDB', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 45, arrival: '13:45', departure: null, day: 2, distance: 1640 },
-          live: { type: 'en-route', expectedArrivalTime: new Date(nowMs + 40 * 60000).toISOString(), platform: '2', delayMinutes: 15 },
-        },
-      ];
-    } else {
-      trainsList = [
-        {
-          train: { number: '12415', name: `${matchedStation.NameEn} - Delhi Superfast`, type: 'Superfast Express', source: rawCode, destination: 'NDLS', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '07:30', day: 1, distance: 0 },
-          live: { type: 'at-station', expectedDepartureTime: new Date(nowMs + 20 * 60000).toISOString(), platform: '1', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12102', name: `${matchedStation.NameEn} - Mumbai Express`, type: 'Express', source: rawCode, destination: 'CSMT', runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '11:45', day: 1, distance: 0 },
-          live: { type: 'scheduled', expectedDepartureTime: new Date(nowMs + 65 * 60000).toISOString(), platform: '2', delayMinutes: 5 },
-        },
-        {
-          train: { number: '20801', name: `Vande Bharat Express (${rawCode})`, type: 'Vande Bharat', source: rawCode, destination: 'BPL', runDays: ['mon', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 1, arrival: null, departure: '15:20', day: 1, distance: 0 },
-          live: { type: 'upcoming', expectedDepartureTime: new Date(nowMs + 110 * 60000).toISOString(), platform: '3', delayMinutes: 0 },
-        },
-        {
-          train: { number: '12833', name: `Howrah - ${matchedStation.NameEn} Superfast`, type: 'Superfast Express', source: 'HWH', destination: rawCode, runDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
-          stop: { sequence: 28, arrival: '18:10', departure: null, day: 2, distance: 1100 },
-          live: { type: 'en-route', expectedArrivalTime: new Date(nowMs + 45 * 60000).toISOString(), platform: '1', delayMinutes: 10 },
-        },
-      ];
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        station: {
-          code: rawCode,
-          name: matchedStation.NameEn,
-        },
-        window: {
-          from: fromTime,
-          to: toTime,
-          hoursBack: hours,
-          hoursAhead: hours,
-        },
-        count: trainsList.length,
-        trains: trainsList,
-      },
-      meta: {
-        traceId: '550e8400-e29b-41d4-a716-446655440000',
-        timestamp: new Date().toISOString(),
-        executionTime: 38,
-        source: 'database',
-      },
-    });
-  });
-
-  // 3g. RailRadar Coach Layout & Composition (GET https://api.railradar.in/v1/trains/{number}/coaches)
+  // 3g. Coach Composition via RailKit trackTrain
   app.get('/api/railradar/train/coaches/:trainNumber/:stationCode?', async (req: Request, res: Response) => {
     const rawNumber = String(req.params.trainNumber || '').trim();
     const cleanNumber = rawNumber.replace(/[^0-9]/g, '');
@@ -1686,197 +1469,53 @@ async function startServer() {
       return res.status(400).json({ success: false, error: 'Train number is required' });
     }
 
-    if (RAILRADAR_API_KEY) {
+    const railKitKey = ensureRailKitConfigured();
+    if (railKitKey) {
       try {
-        const upstreamUrl = stationCode
-          ? `https://api.railradar.in/v1/trains/${cleanNumber}/coaches/${stationCode}`
-          : `https://api.railradar.in/v1/trains/${cleanNumber}/coaches`;
-        const upstreamRes = await fetch(upstreamUrl, {
-          headers: {
-            'Authorization': `Bearer ${RAILRADAR_API_KEY}`,
-            'Accept': 'application/json',
-          },
-        });
-        if (upstreamRes.ok) {
-          const json = await upstreamRes.json();
-          if (json && json.success && json.data) {
-            // Normalize coach array and station fields from live RailRadar API
-            if (!json.data.coaches && Array.isArray(json.data.rake)) {
-              json.data.coaches = json.data.rake.map((item: any) => ({
-                position: item.position,
-                code: item.code,
-                category: item.category || item.classType,
-                classType: item.classType || item.category,
-                name: item.className || item.name || `Coach ${item.code}`,
-                totalBerths: item.totalBerths || 0,
-                hasSeats: item.hasSeats !== undefined ? item.hasSeats : true,
-                color: item.color || (
-                  item.classType === '1A' ? '#dc2626' :
-                  item.classType === '2A' ? '#2563eb' :
-                  item.classType === '3A' || item.classType === '3E' ? '#0284c7' :
-                  item.classType === 'SL' ? '#16a34a' :
-                  item.classType === 'CC' || item.classType === 'EC' ? '#0d9488' :
-                  item.code === 'PC' ? '#f59e0b' : '#64748b'
-                ),
-              }));
-            }
-            if (!json.data.stationCode && json.data.station?.code) {
-              json.data.stationCode = json.data.station.code;
-            }
-            if (!json.data.stationName && json.data.station?.name) {
-              json.data.stationName = json.data.station.name;
-            }
-            if (!json.data.platform && json.data.station?.platform) {
-              json.data.platform = json.data.station.platform;
-            }
-            if (!json.data.baseFormation && json.data.formation) {
-              json.data.baseFormation = json.data.formation;
-            }
-            return res.json(json);
-          }
+        const todayIst = getIstDateParts();
+        const liveRes = await railKitTrackTrain(cleanNumber, todayIst.ddmmyyyy);
+        if (liveRes?.success && Array.isArray(liveRes.data?.coachPosition) && liveRes.data.coachPosition.length > 0) {
+          const coachesRaw = liveRes.data.coachPosition;
+          return res.json({
+            success: true,
+            data: {
+              trainNumber: cleanNumber,
+              trainName: liveRes.data.trainName || `Train #${cleanNumber}`,
+              stationCode: stationCode || liveRes.data.currentStationCode || 'SRC',
+              stationName: stationCode || liveRes.data.currentStationCode || 'Origin',
+              direction: 'UP',
+              platform: '1',
+              baseFormation: coachesRaw.map((c: any) => c.number || c.type).join('-'),
+              totalCoaches: coachesRaw.length,
+              coaches: coachesRaw.map((c: any, i: number) => ({
+                position: Number(c.position) || i + 1,
+                code: String(c.number || c.type || `C${i + 1}`),
+                category: String(c.coachClass || c.type || 'GEN'),
+                classType: String(c.coachClass || c.type || 'GEN'),
+                name: `Coach ${c.number || c.type} (${c.coachClass || c.coachType || 'Standard'})`,
+                totalBerths: 72,
+                hasSeats: c.type !== 'ENG' && c.type !== 'EOG',
+                color: '#0284c7',
+              })),
+            },
+            meta: {
+              timestamp: new Date().toISOString(),
+              source: 'railkit-api',
+            },
+          });
         }
-      } catch (err) {
-        console.warn('RailRadar Coaches API upstream failed, using fallback:', err);
+      } catch {
+        // ignore
       }
     }
 
-    // High fidelity fallback matching user's exact curl sample for 12952 (Mumbai Rajdhani)
-    const trainName = cleanNumber === '12952'
-      ? 'Mumbai Rajdhani Express'
-      : cleanNumber === '12919'
-        ? 'Malwa SF Express'
-        : `Superfast Express ${cleanNumber}`;
-
-    return res.json({
-      success: true,
-      data: {
-        trainNumber: cleanNumber,
-        trainName,
-        stationCode: stationCode || 'BRC',
-        stationName: stationCode === 'BRC' ? 'Vadodara Junction' : 'En-route Station',
-        direction: 'UP',
-        platform: '2',
-        baseFormation: 'ENG-EOG-H1-A1-A2-A3-A4-A5-B1-B2-B3-B4-B5-B6-B7-B8-B9-B10-B11-PC-EOG',
-        totalCoaches: 21,
-        coaches: [
-          { position: 1, code: 'ENG', category: 'ENG', classType: 'ENG', name: 'Locomotive', totalBerths: 0, hasSeats: false, color: '#64748b' },
-          { position: 2, code: 'EOG', category: 'EOG', classType: 'EOG', name: 'End on Generator', totalBerths: 0, hasSeats: false, color: '#64748b' },
-          { position: 3, code: 'H1', category: '1A', classType: '1A', name: 'AC First Class (H1)', totalBerths: 24, hasSeats: true, color: '#dc2626' },
-          { position: 4, code: 'A1', category: '2A', classType: '2A', name: 'AC 2 Tier (A1)', totalBerths: 48, hasSeats: true, color: '#2563eb' },
-          { position: 5, code: 'A2', category: '2A', classType: '2A', name: 'AC 2 Tier (A2)', totalBerths: 48, hasSeats: true, color: '#2563eb' },
-          { position: 6, code: 'A3', category: '2A', classType: '2A', name: 'AC 2 Tier (A3)', totalBerths: 48, hasSeats: true, color: '#2563eb' },
-          { position: 7, code: 'A4', category: '2A', classType: '2A', name: 'AC 2 Tier (A4)', totalBerths: 48, hasSeats: true, color: '#2563eb' },
-          { position: 8, code: 'A5', category: '2A', classType: '2A', name: 'AC 2 Tier (A5)', totalBerths: 48, hasSeats: true, color: '#2563eb' },
-          { position: 9, code: 'B1', category: '3A', classType: '3A', name: 'AC 3 Tier (B1)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 10, code: 'B2', category: '3A', classType: '3A', name: 'AC 3 Tier (B2)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 11, code: 'B3', category: '3A', classType: '3A', name: 'AC 3 Tier (B3)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 12, code: 'B4', category: '3A', classType: '3A', name: 'AC 3 Tier (B4)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 13, code: 'B5', category: '3A', classType: '3A', name: 'AC 3 Tier (B5)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 14, code: 'B6', category: '3A', classType: '3A', name: 'AC 3 Tier (B6)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 15, code: 'B7', category: '3A', classType: '3A', name: 'AC 3 Tier (B7)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 16, code: 'B8', category: '3A', classType: '3A', name: 'AC 3 Tier (B8)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 17, code: 'B9', category: '3A', classType: '3A', name: 'AC 3 Tier (B9)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 18, code: 'B10', category: '3A', classType: '3A', name: 'AC 3 Tier (B10)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 19, code: 'B11', category: '3A', classType: '3A', name: 'AC 3 Tier (B11)', totalBerths: 72, hasSeats: true, color: '#0284c7' },
-          { position: 20, code: 'PC', category: 'PC', classType: 'PC', name: 'Pantry Car', totalBerths: 0, hasSeats: false, color: '#f59e0b' },
-          { position: 21, code: 'EOG', category: 'EOG', classType: 'EOG', name: 'End on Generator', totalBerths: 0, hasSeats: false, color: '#64748b' },
-        ],
-        blueprints: {
-          '3A': {
-            classCode: '3A',
-            className: 'AC 3 Tier',
-            totalBerths: 72,
-            hasSeats: true,
-            cabins: [
-              {
-                cabinNumber: 1,
-                main: [
-                  { number: 1, type: 'LB', name: 'Lower Berth' },
-                  { number: 2, type: 'MB', name: 'Middle Berth' },
-                  { number: 3, type: 'UB', name: 'Upper Berth' },
-                  { number: 4, type: 'LB', name: 'Lower Berth' },
-                  { number: 5, type: 'MB', name: 'Middle Berth' },
-                  { number: 6, type: 'UB', name: 'Upper Berth' },
-                ],
-                side: [
-                  { number: 7, type: 'SL', name: 'Side Lower' },
-                  { number: 8, type: 'SU', name: 'Side Upper' },
-                ],
-              },
-              {
-                cabinNumber: 2,
-                main: [
-                  { number: 9, type: 'LB', name: 'Lower Berth' },
-                  { number: 10, type: 'MB', name: 'Middle Berth' },
-                  { number: 11, type: 'UB', name: 'Upper Berth' },
-                  { number: 12, type: 'LB', name: 'Lower Berth' },
-                  { number: 13, type: 'MB', name: 'Middle Berth' },
-                  { number: 14, type: 'UB', name: 'Upper Berth' },
-                ],
-                side: [
-                  { number: 15, type: 'SL', name: 'Side Lower' },
-                  { number: 16, type: 'SU', name: 'Side Upper' },
-                ],
-              },
-            ],
-          },
-          '2A': {
-            classCode: '2A',
-            className: 'AC 2 Tier',
-            totalBerths: 48,
-            hasSeats: true,
-            cabins: [
-              {
-                cabinNumber: 1,
-                main: [
-                  { number: 1, type: 'LB', name: 'Lower Berth' },
-                  { number: 2, type: 'UB', name: 'Upper Berth' },
-                  { number: 3, type: 'LB', name: 'Lower Berth' },
-                  { number: 4, type: 'UB', name: 'Upper Berth' },
-                ],
-                side: [
-                  { number: 5, type: 'SL', name: 'Side Lower' },
-                  { number: 6, type: 'SU', name: 'Side Upper' },
-                ],
-              },
-            ],
-          },
-          '1A': {
-            classCode: '1A',
-            className: 'AC First Class',
-            totalBerths: 24,
-            hasSeats: true,
-            cabins: [
-              {
-                cabinNumber: 1,
-                main: [
-                  { number: 1, type: 'LB', name: 'Lower Berth Coupe' },
-                  { number: 2, type: 'UB', name: 'Upper Berth Coupe' },
-                ],
-              },
-            ],
-          },
-        },
-        summary: {
-          '3A': 11,
-          '2A': 5,
-          '1A': 1,
-          'PC': 1,
-          'EOG': 2,
-          'ENG': 1,
-        },
-        reversals: ['BRC'],
-      },
-      meta: {
-        traceId: '550e8400-e29b-41d4-a716-446655440000',
-        timestamp: new Date().toISOString(),
-        executionTime: 38,
-        source: 'database',
-      },
+    return res.status(404).json({
+      success: false,
+      error: `Coach composition not available for Train #${cleanNumber}.`,
     });
   });
 
-  // 3h. RailRadar Route GeoJSON (GET https://api.railradar.in/v1/trains/{number}/route?format=geojson&stops=true)
+  // 3h. Route GeoJSON via RailKit getTrainInfo
   app.get('/api/railradar/train/route/:trainNumber', async (req: Request, res: Response) => {
     const rawNumber = String(req.params.trainNumber || '').trim();
     const cleanNumber = rawNumber.replace(/[^0-9]/g, '');
@@ -1885,62 +1524,53 @@ async function startServer() {
       return res.status(400).json({ success: false, error: 'Train number is required' });
     }
 
-    if (RAILRADAR_API_KEY) {
+    const railKitKey = ensureRailKitConfigured();
+    if (railKitKey) {
       try {
-        const upstreamUrl = `https://api.railradar.in/v1/trains/${cleanNumber}/route?format=geojson&stops=true`;
-        const upstreamRes = await fetch(upstreamUrl, {
-          headers: {
-            'Authorization': `Bearer ${RAILRADAR_API_KEY}`,
-            'Accept': 'application/json',
-          },
-        });
-        if (upstreamRes.ok) {
-          const json = await upstreamRes.json();
-          if (json && json.success) {
-            return res.json(json);
-          }
+        const infoRes = await railKitGetTrainInfo(cleanNumber);
+        if (infoRes?.success && Array.isArray(infoRes.data?.route)) {
+          const stops = infoRes.data.route
+            .filter((r: any) => r.coordinates?.latitude && r.coordinates?.longitude)
+            .map((r: any, idx: number) => ({
+              sequence: idx + 1,
+              code: r.stnCode,
+              name: r.stnName,
+              lat: Number(r.coordinates.latitude),
+              lng: Number(r.coordinates.longitude),
+            }));
+
+          return res.json({
+            success: true,
+            data: {
+              trainNumber: cleanNumber,
+              format: 'geojson',
+              geojson: {
+                type: 'Feature',
+                properties: { trainNumber: cleanNumber },
+                geometry: {
+                  type: 'LineString',
+                  coordinates: stops.map((s: any) => [s.lng, s.lat]),
+                },
+              },
+              stops,
+            },
+            meta: {
+              timestamp: new Date().toISOString(),
+              source: 'railkit-api',
+            },
+          });
         }
-      } catch (err) {
-        console.warn('RailRadar Route GeoJSON API upstream failed, using fallback:', err);
+      } catch {
+        // ignore
       }
     }
 
-    return res.json({
-      success: true,
-      data: {
-        trainNumber: cleanNumber,
-        format: 'geojson',
-        geojson: {
-          type: 'Feature',
-          properties: { trainNumber: cleanNumber },
-          geometry: {
-            type: 'LineString',
-            coordinates: [
-              [75.86, 22.72],
-              [75.78, 23.17],
-              [76.71, 23.18],
-              [77.41, 23.25],
-              [78.58, 25.44],
-              [77.22, 28.64],
-            ],
-          },
-        },
-        stops: [
-          { sequence: 1, code: 'INDB', name: 'Indore Junction', lat: 22.72, lng: 75.86 },
-          { sequence: 2, code: 'UJN', name: 'Ujjain Junction', lat: 23.17, lng: 75.78 },
-          { sequence: 3, code: 'BPL', name: 'Bhopal Junction', lat: 23.25, lng: 77.41 },
-          { sequence: 4, code: 'VGLJ', name: 'V Lakshmibai Jhansi', lat: 25.44, lng: 78.58 },
-          { sequence: 5, code: 'NDLS', name: 'New Delhi', lat: 28.64, lng: 77.22 },
-        ],
-      },
-      meta: {
-        traceId: '550e8400-e29b-41d4-a716-446655440000',
-        timestamp: new Date().toISOString(),
-        executionTime: 38,
-        source: 'database',
-      },
+    return res.status(404).json({
+      success: false,
+      error: `Route coordinates not available for Train #${cleanNumber}.`,
     });
   });
+
 
   // 4. Submit Booking Enquiry (Public)
   app.post('/api/enquiries', (req: Request, res: Response) => {

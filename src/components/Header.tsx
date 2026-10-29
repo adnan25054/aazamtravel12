@@ -14,12 +14,17 @@ import {
   Compass, 
   Clock, 
   MapPin,
-  ChevronRight
+  ChevronRight,
+  Activity,
+  FileCheck,
+  Building,
+  CalendarDays
 } from 'lucide-react';
 
 interface HeaderProps {
   settings: WebsiteSettings;
   currentPage?: 'home' | 'train';
+  activeRoute?: string;
   onOpenAdminLogin: () => void;
   isAdminLoggedIn: boolean;
   onOpenAdminDashboard: () => void;
@@ -29,6 +34,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   settings,
   currentPage = 'home',
+  activeRoute = '/',
   onOpenAdminLogin,
   isAdminLoggedIn,
   onOpenAdminDashboard,
@@ -40,13 +46,16 @@ export const Header: React.FC<HeaderProps> = ({
   const cleanWhatsApp = settings.whatsapp.replace(/[^0-9]/g, '');
 
   const navItems = [
-    { label: 'Home', id: 'hero' },
-    { label: 'Train Booking', id: 'train-booking', icon: Train, highlight: true },
-    { label: 'Stations & Codes', id: 'station-search', icon: MapPin },
-    { label: 'Flight Booking', id: 'flight-booking', icon: Plane },
-    { label: 'Hotel Booking', id: 'hotel-booking', icon: Building2 },
-    { label: 'Bus Booking', id: 'bus-booking', icon: Bus },
-    { label: 'Tour Packages', id: 'packages', icon: Compass },
+    { label: 'Home', id: 'hero', route: '/' },
+    { label: 'Train Booking', id: 'train-booking', route: '/train', icon: Train, highlight: true },
+    { label: 'Live Status', id: 'live-train-status', route: '/live-train-status', icon: Activity },
+    { label: 'PNR Check', id: 'pnr-status', route: '/pnr-status', icon: FileCheck },
+    { label: 'Live Station', id: 'live-station', route: '/live-station', icon: Building },
+    { label: 'Timetable', id: 'train-timetable', route: '/train-timetable', icon: CalendarDays },
+    { label: 'Flights', id: 'flight-booking', icon: Plane },
+    { label: 'Hotels', id: 'hotel-booking', icon: Building2 },
+    { label: 'Buses', id: 'bus-booking', icon: Bus },
+    { label: 'Packages', id: 'packages', icon: Compass },
     { label: 'Contact', id: 'contact' },
   ];
 
@@ -93,21 +102,21 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Logo */}
           <button
             onClick={() => handleNavClick('hero')}
-            className="flex items-center text-left focus:outline-none"
+            className="flex items-center text-left focus:outline-none shrink-0"
             aria-label="Aazam Travel Agency Home"
           >
             <Logo />
           </button>
 
           {/* Desktop Navigation */}
-          <nav className="hidden xl:flex items-center space-x-1" aria-label="Main Navigation">
+          <nav className="hidden xl:flex items-center space-x-0.5" aria-label="Main Navigation">
             {navItems.map((item) => {
-              const isActive =
-                (item.id === 'train-booking' && currentPage === 'train') ||
-                (item.id === 'hero' && currentPage === 'home');
+              const isRouteActive =
+                (item.route && activeRoute === item.route) ||
+                (item.id === 'hero' && currentPage === 'home' && activeRoute === '/');
 
               let buttonClass = 'text-slate-700 hover:text-[#0B2545] hover:bg-slate-100/70';
-              if (item.id === 'train-booking' && currentPage === 'train') {
+              if (isRouteActive && item.id !== 'hero') {
                 buttonClass = 'bg-orange-500 text-white font-bold shadow-xs hover:bg-orange-600';
               } else if (item.highlight) {
                 buttonClass = 'text-orange-600 hover:text-orange-700 hover:bg-orange-50 font-semibold';
@@ -117,20 +126,17 @@ export const Header: React.FC<HeaderProps> = ({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`px-3 py-2 text-sm font-medium transition-colors rounded-lg flex items-center gap-1.5 ${buttonClass}`}
+                  className={`px-2.5 py-2 text-xs font-semibold transition-colors rounded-lg flex items-center gap-1.5 whitespace-nowrap ${buttonClass}`}
                 >
-                  {item.icon && <item.icon className="w-4 h-4 opacity-85" />}
+                  {item.icon && <item.icon className="w-3.5 h-3.5 opacity-85" />}
                   <span>{item.label}</span>
-                  {item.id === 'train-booking' && currentPage === 'train' && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                  )}
                 </button>
               );
             })}
           </nav>
 
           {/* Action CTAs */}
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-2.5 shrink-0">
             {/* WhatsApp Quick Action */}
             <a
               href={`https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(
@@ -138,30 +144,30 @@ export const Header: React.FC<HeaderProps> = ({
               )}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all hover:shadow active:scale-95"
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all hover:shadow active:scale-95"
               title="Chat on WhatsApp"
             >
-              <MessageSquare className="w-4 h-4" />
+              <MessageSquare className="w-3.5 h-3.5" />
               <span>WhatsApp</span>
             </a>
 
             {/* Tap to Call */}
             <a
               href={`tel:${cleanPhone}`}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold text-[#0B2545] bg-blue-50 hover:bg-blue-100/80 border border-blue-200 transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold text-[#0B2545] bg-blue-50 hover:bg-blue-100/80 border border-blue-200 transition-colors"
               title="Call Directly"
             >
-              <Phone className="w-4 h-4 text-[#0B2545]" />
-              <span className="hidden lg:inline">{settings.phone}</span>
-              <span className="lg:hidden">Call</span>
+              <Phone className="w-3.5 h-3.5 text-[#0B2545]" />
+              <span className="hidden 2xl:inline">{settings.phone}</span>
+              <span className="2xl:hidden">Call</span>
             </a>
 
             {/* Primary Book Now CTA */}
             <button
               onClick={() => handleNavClick('train-booking')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-[#F97316] text-white hover:bg-orange-600 shadow-md shadow-orange-500/20 transition-all hover:shadow-lg active:scale-95"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-[#F97316] text-white hover:bg-orange-600 shadow-md shadow-orange-500/20 transition-all hover:shadow-lg active:scale-95"
             >
-              <Train className="w-4 h-4" />
+              <Train className="w-3.5 h-3.5" />
               <span>Book Now</span>
             </button>
 
@@ -180,27 +186,27 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Mobile menu trigger */}
-          <div className="flex items-center gap-2 md:hidden">
+          {/* Mobile / Tablet menu trigger */}
+          <div className="flex items-center gap-2 xl:hidden">
             <a
               href={`https://wa.me/${cleanWhatsApp}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-emerald-600 text-white"
+              className="p-2 rounded-lg bg-emerald-600 text-white md:hidden"
               aria-label="WhatsApp"
             >
               <MessageSquare className="w-4 h-4" />
             </a>
             <a
               href={`tel:${cleanPhone}`}
-              className="p-2 rounded-lg bg-blue-50 text-[#0B2545] border border-blue-200"
+              className="p-2 rounded-lg bg-blue-50 text-[#0B2545] border border-blue-200 md:hidden"
               aria-label="Call"
             >
               <Phone className="w-4 h-4" />
             </a>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 focus:outline-none"
+              className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 focus:outline-none border border-slate-200"
               aria-label="Toggle menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -209,18 +215,20 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Mobile Drawer Menu */}
+      {/* Mobile & Tablet Drawer Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 shadow-xl animate-in fade-in slide-in-from-top-2 duration-150">
+        <div className="xl:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 shadow-xl max-h-[85vh] overflow-y-auto">
           <div className="space-y-1">
             {navItems.map((item) => {
-              const isTrainActive = item.id === 'train-booking' && currentPage === 'train';
+              const isRouteActive =
+                (item.route && activeRoute === item.route) ||
+                (item.id === 'hero' && currentPage === 'home' && activeRoute === '/');
               return (
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-base font-medium transition-colors ${
-                    isTrainActive
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                    isRouteActive && item.id !== 'hero'
                       ? 'text-white bg-orange-500 font-bold shadow-xs'
                       : item.highlight
                       ? 'text-orange-600 bg-orange-50 font-semibold'
@@ -228,10 +236,10 @@ export const Header: React.FC<HeaderProps> = ({
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    {item.icon && <item.icon className={`w-5 h-5 ${isTrainActive ? 'text-white' : 'text-slate-500'}`} />}
+                    {item.icon && <item.icon className={`w-4 h-4 ${isRouteActive && item.id !== 'hero' ? 'text-white' : 'text-slate-500'}`} />}
                     <span>{item.label}</span>
                   </div>
-                  <ChevronRight className={`w-4 h-4 ${isTrainActive ? 'text-white' : 'text-slate-400'}`} />
+                  <ChevronRight className={`w-4 h-4 ${isRouteActive && item.id !== 'hero' ? 'text-white' : 'text-slate-400'}`} />
                 </button>
               );
             })}
@@ -256,7 +264,7 @@ export const Header: React.FC<HeaderProps> = ({
                 className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-xs"
               >
                 <MessageSquare className="w-4 h-4" />
-                <span>WhatsApp</span>
+                <span>WhatsApp (+91 94215 56220)</span>
               </a>
               <a
                 href={`tel:${cleanPhone}`}
@@ -284,3 +292,4 @@ export const Header: React.FC<HeaderProps> = ({
     </header>
   );
 };
+

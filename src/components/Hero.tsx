@@ -1,5 +1,6 @@
 import React from 'react';
 import { WebsiteSettings } from '../types';
+import { OFFICIAL_LOGO_URL } from './Logo';
 import { Train, Plane, Building2, MessageSquare, MapPin, CheckCircle2 } from 'lucide-react';
 
 interface HeroProps {
@@ -40,9 +41,9 @@ export const Hero: React.FC<HeroProps> = ({
           <div className="flex flex-wrap items-center gap-3 mb-6">
             <div className="inline-flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-white/10 backdrop-blur-md border border-amber-400/30 shadow-lg">
               <img
-                src="/logo.svg"
+                src={OFFICIAL_LOGO_URL}
                 alt="Aazam Travel Agency Official Logo"
-                className="h-13 w-auto object-contain rounded-xl drop-shadow-md transition-transform hover:scale-105"
+                className="h-14 w-auto object-contain rounded-xl bg-white p-1 drop-shadow-md transition-transform hover:scale-105"
               />
               <div className="flex flex-col">
                 <span className="text-xs sm:text-sm font-black tracking-wider uppercase text-white font-['Cabinet_Grotesk',system-ui] leading-tight">

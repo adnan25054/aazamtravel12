@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { loginAdmin } from '../../api';
 import { AdminUser } from '../../types';
+import { OFFICIAL_LOGO_URL } from '../Logo';
 import { Lock, Mail, Key, AlertCircle, Loader2, X, CheckCircle, Shield } from 'lucide-react';
 
 interface AdminLoginModalProps {
@@ -57,7 +58,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center mb-3">
             <img
-              src="/logo.svg"
+              src={OFFICIAL_LOGO_URL}
               alt="Aazam Travel Agency Logo"
               className="h-16 w-auto object-contain"
             />

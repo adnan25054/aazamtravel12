@@ -315,29 +315,63 @@ export async function downloadCsvFile(): Promise<void> {
 }
 
 // ==========================================
-// Indian Rail API Endpoints (via Server Proxy)
+// Indian Rail & RailRadar API Endpoints (via Server Proxy)
 // ==========================================
+
+export interface RailwayApiError extends Error {
+  errorCode?: string;
+  limitationNote?: string;
+  officialEnquiryUrl?: string;
+  statusCode?: number;
+}
+
+function buildRailwayError(data: any, fallbackMessage: string, statusCode?: number): RailwayApiError {
+  const err = new Error(data?.error || fallbackMessage) as RailwayApiError;
+  err.errorCode = data?.errorCode;
+  err.limitationNote = data?.limitationNote;
+  err.officialEnquiryUrl = data?.officialEnquiryUrl;
+  err.statusCode = statusCode;
+  return err;
+}
+
+export async function fetchTrainConfigStatus(): Promise<{
+  success: boolean;
+  providers: {
+    indianRailApiConfigured: boolean;
+    railRadarApiConfigured: boolean;
+    liveTrainStatusAvailable: boolean;
+    pnrCheckAvailable: boolean;
+    liveStationAvailable: boolean;
+    timetableAvailable: boolean;
+  };
+}> {
+  const res = await fetch('/api/train/config-status');
+  if (!res.ok) {
+    throw new Error('Failed to check railway API configuration status');
+  }
+  return res.json();
+}
 
 export async function fetchLiveTrainStatus(
   trainNumber: string,
   date?: string
 ): Promise<any> {
-  const params = new URLSearchParams({ trainNumber });
-  if (date) params.set('date', date);
+  const params = new URLSearchParams({ trainNumber: trainNumber.trim() });
+  if (date) params.set('date', date.trim());
   const res = await fetch(`/api/train/live-status?${params.toString()}`);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to fetch live train status');
+    throw buildRailwayError(data, 'Failed to fetch live train status', res.status);
   }
   return data;
 }
 
 export async function fetchPNRStatus(pnrNumber: string): Promise<any> {
-  const params = new URLSearchParams({ pnrNumber });
+  const params = new URLSearchParams({ pnrNumber: pnrNumber.trim() });
   const res = await fetch(`/api/train/pnr-status?${params.toString()}`);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to fetch PNR status');
+    throw buildRailwayError(data, 'Failed to fetch PNR status', res.status);
   }
   return data;
 }
@@ -347,7 +381,7 @@ export async function searchStationAutocomplete(query: string): Promise<any> {
   const params = new URLSearchParams({ query: query.trim() });
   const res = await fetch(`/api/train/station-autocomplete?${params.toString()}`);
   if (!res.ok) return [];
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   return data.Station || [];
 }
 
@@ -360,41 +394,41 @@ export async function fetchTrainSchedule(
     haltsOnly: haltsOnly ? 'true' : 'false',
   });
   const res = await fetch(`/api/train/schedule?${params.toString()}`);
-  const data = await res.json();
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to fetch train schedule & timetable');
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.success) {
+    throw buildRailwayError(data, 'Failed to fetch train schedule & timetable', res.status);
   }
   return data;
 }
 
-// RailRadar API: Live Train Status (GET /v1/trains/{number}/live)
+// RailKit API: Live Train Status
 export async function fetchRailRadarLiveTrain(
   trainNumber: string
 ): Promise<RailRadarLiveTrainResponse> {
   const cleanNumber = trainNumber.trim().replace(/[^0-9]/g, '');
   const res = await fetch(`/api/railradar/train/live/${cleanNumber}`);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to fetch live train running status from RailRadar');
+    throw buildRailwayError(data, 'Failed to fetch live train running status from RailKit', res.status);
   }
   return data;
 }
 
-// RailRadar API: Live Station Board (GET /v1/stations/{code}/live?hours=4)
+// RailKit API: Live Station Board
 export async function fetchRailRadarLiveStation(
   stationCode: string,
   hours = 4
 ): Promise<RailRadarLiveStationResponse> {
-  const cleanCode = stationCode.trim().toUpperCase();
+  const cleanCode = encodeURIComponent(stationCode.trim());
   const res = await fetch(`/api/railradar/station/live/${cleanCode}?hours=${hours}`);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to fetch live station departures from RailRadar');
+    throw buildRailwayError(data, 'Failed to fetch live station board from RailKit', res.status);
   }
   return data;
 }
 
-// RailRadar API: Coach Layout & Blueprints (GET /v1/trains/{number}/coaches)
+// RailKit API: Coach Layout & Composition
 export async function fetchRailRadarCoaches(
   trainNumber: string,
   stationCode?: string
@@ -404,11 +438,12 @@ export async function fetchRailRadarCoaches(
     ? `/api/railradar/train/coaches/${cleanNumber}/${stationCode.trim().toUpperCase()}`
     : `/api/railradar/train/coaches/${cleanNumber}`;
   const res = await fetch(url);
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Failed to fetch coach layout from RailRadar');
+    throw buildRailwayError(data, 'Failed to fetch coach composition from RailKit', res.status);
   }
   return data;
 }
+
 
 

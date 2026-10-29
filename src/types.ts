@@ -162,7 +162,12 @@ export interface LiveTrainStatusResponse {
   CurrentPosition?: string | null;
   CurrentStation: LiveTrainStation;
   TrainRoute: LiveTrainRouteStation[];
+  LastUpdated?: string;
+  Source?: string;
   Message?: string;
+  error?: string;
+  errorCode?: string;
+  officialEnquiryUrl?: string;
 }
 
 export interface PNRPassenger {
@@ -183,6 +188,10 @@ export interface PNRStatusResponse {
   To: string;
   JourneyDate: string;
   Passangers: PNRPassenger[];
+  error?: string;
+  errorCode?: string;
+  limitationNote?: string;
+  officialEnquiryUrl?: string;
 }
 
 export interface StationAutocompleteItem {
@@ -238,6 +247,7 @@ export interface TrainScheduleRouteItem {
 
 export interface TrainScheduleResponse {
   success: boolean;
+  isScheduledTimetable?: boolean;
   data: {
     train: TrainScheduleInfo;
     route: TrainScheduleRouteItem[];
@@ -247,8 +257,11 @@ export interface TrainScheduleResponse {
     timestamp?: string;
     executionTime?: number;
     source?: string;
+    notice?: string;
   };
   error?: string;
+  errorCode?: string;
+  officialEnquiryUrl?: string;
 }
 
 // RailRadar Live Train Running Status (https://api.railradar.in/v1/trains/{number}/live)

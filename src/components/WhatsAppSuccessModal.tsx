@@ -96,14 +96,16 @@ export const WhatsAppSuccessModal: React.FC<WhatsAppSuccessModalProps> = ({
 
         {/* Action Buttons */}
         <div className="space-y-3">
-          <button
-            onClick={handleOpenWhatsApp}
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg shadow-emerald-600/25 transition-all hover:translate-y-[-1px]"
           >
             <MessageSquare className="w-5 h-5" />
             <span>Open WhatsApp (+91 94215 56220)</span>
             <ExternalLink className="w-4 h-4 opacity-75" />
-          </button>
+          </a>
 
           <button
             onClick={onClose}

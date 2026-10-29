@@ -538,14 +538,23 @@ export function formatStationLabel(stn: IndianStation): string {
  */
 export function extractStationCode(input: string): string {
   if (!input) return '';
-  const match = input.match(/\(([A-Z0-9]{2,6})\)/i);
+  const match = input.match(/\(([A-Z0-9]{1,6})\)/i);
   if (match) return match[1].toUpperCase();
   const clean = input.trim().toUpperCase();
-  if (clean.length <= 6 && /^[A-Z0-9]+$/.test(clean)) return clean;
-  // If no parentheses, look for known station in dataset
-  const found = INDIAN_STATIONS.find(
-    (s) => s.NameEn.toUpperCase() === clean || s.StationCode === clean
+  // Exact station code match first
+  const exactCode = INDIAN_STATIONS.find((s) => s.StationCode.toUpperCase() === clean);
+  if (exactCode) return exactCode.StationCode;
+  // Exact station name or city match
+  const exactName = INDIAN_STATIONS.find(
+    (s) =>
+      s.NameEn.toUpperCase() === clean ||
+      (s.City && s.City.toUpperCase() === clean)
   );
-  if (found) return found.StationCode;
+  if (exactName) return exactName.StationCode;
+  // Search stations by prefix/substring if user typed a station name like "Indore" or "New Delhi"
+  const searched = searchStations(clean, 1);
+  if (searched.length > 0) return searched[0].StationCode;
+  if (clean.length <= 6 && /^[A-Z0-9]+$/.test(clean)) return clean;
   return clean.slice(0, 5);
 }
+

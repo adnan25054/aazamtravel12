@@ -1,25 +1,27 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   submitEnquiry, 
   fetchLiveTrainStatus, 
+  fetchPNRStatus,
   searchStationAutocomplete,
   fetchTrainSchedule,
-  fetchRailRadarLiveTrain,
   fetchRailRadarLiveStation,
+  RailwayApiError,
 } from '../api';
 import { 
   Enquiry, 
   PassengerDetail, 
   LiveTrainStatusResponse, 
+  PNRStatusResponse,
   StationAutocompleteItem,
   TrainScheduleResponse,
-  RailRadarLiveTrainResponse,
   RailRadarLiveStationResponse,
 } from '../types';
-import { Logo } from './Logo';
+import { Logo, OFFICIAL_LOGO_URL } from './Logo';
 import { TrainStationBoard } from './TrainStationBoard';
 import { StationAutocomplete } from './StationAutocomplete';
 import { StationSearchBar } from './StationSearchBar';
+import { extractStationCode } from '../data/indianStations';
 import { 
   Train, 
   Calendar, 
@@ -36,7 +38,6 @@ import {
   Trash2, 
   ShieldCheck, 
   ChevronRight, 
-  HelpCircle, 
   ArrowRight, 
   MessageSquare, 
   Home,
@@ -44,23 +45,23 @@ import {
   FileCheck,
   Search,
   Navigation,
-  Compass,
-  AlertTriangle,
   Gauge,
   Milestone,
   CalendarDays,
-  Layers,
-  Filter,
   Radio,
-  Eye,
-  Check,
   Building,
-  Info
+  Info,
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
+
+export type ActiveTrainTab = 'booking' | 'live-status' | 'pnr-status' | 'live-station' | 'schedule' | 'station-search';
 
 interface TrainPageProps {
   agencyPhone: string;
   agencyWhatsApp: string;
+  initialTab?: ActiveTrainTab;
+  onTabRouteChange?: (tab: ActiveTrainTab) => void;
   onEnquirySuccess: (data: { enquiry: Enquiry; whatsappUrl: string }) => void;
   onNavigateHome: () => void;
   onNavigateSection: (sectionId: string) => void;
@@ -199,16 +200,28 @@ const POPULAR_TRAINS: PopularTrain[] = [
   },
 ];
 
-type ActiveTrainTab = 'booking' | 'live-status' | 'live-station' | 'schedule' | 'station-search';
-
 export const TrainPage: React.FC<TrainPageProps> = ({
   agencyPhone,
   agencyWhatsApp,
+  initialTab = 'booking',
+  onTabRouteChange,
   onEnquirySuccess,
   onNavigateHome,
 }) => {
-  // Top level active tool tab: Booking | Live Status | Live Station | Timetable
-  const [activeTab, setActiveTab] = useState<ActiveTrainTab>('booking');
+  // Top level active tool tab: Booking | Live Status | PNR Check | Live Station | Timetable | Station Search
+  const [activeTab, setActiveTab] = useState<ActiveTrainTab>(initialTab);
+
+  // Sync activeTab when URL / initialTab prop changes
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  const switchTab = (tab: ActiveTrainTab) => {
+    setActiveTab(tab);
+    if (onTabRouteChange) {
+      onTabRouteChange(tab);
+    }
+  };
 
   // ==========================================
   // Booking Form State
@@ -262,23 +275,32 @@ export const TrainPage: React.FC<TrainPageProps> = ({
   const [bookingError, setBookingError] = useState<string | null>(null);
 
   // ==========================================
-  // Live Train Status State
+  // Live Train Status State (IST Date Aware for RailKit)
   // ==========================================
-  const [liveTrainNumber, setLiveTrainNumber] = useState('12565');
-  const [liveDate, setLiveDate] = useState(() => {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
-  });
+  const getIstDateIso = (offsetDays = 0) => {
+    const ist = new Date(Date.now() + 5.5 * 3600 * 1000 + offsetDays * 86400000);
+    return ist.toISOString().split('T')[0];
+  };
+
+  const [liveTrainNumber, setLiveTrainNumber] = useState('12919');
+  const [liveDate, setLiveDate] = useState(() => getIstDateIso(0));
   const [liveStatusLoading, setLiveStatusLoading] = useState(false);
   const [liveStatusError, setLiveStatusError] = useState<string | null>(null);
+  const [liveStatusErrorCode, setLiveStatusErrorCode] = useState<string | undefined>(undefined);
   const [liveStatusData, setLiveStatusData] = useState<LiveTrainStatusResponse | null>(null);
 
-  // Station Board & Coach Selection State
-  const [stationBoardFilter, setStationBoardFilter] = useState<'all' | 'departures' | 'arrivals' | 'ontime' | 'delayed'>('all');
-  const [selectedBerth, setSelectedBerth] = useState<{ number: number; type: string; name: string } | null>(null);
+  // ==========================================
+  // PNR Status Check State
+  // ==========================================
+  const [pnrInput, setPnrInput] = useState('');
+  const [pnrLoading, setPnrLoading] = useState(false);
+  const [pnrError, setPnrError] = useState<string | null>(null);
+  const [pnrLimitationNote, setPnrLimitationNote] = useState<string | null>(null);
+  const [pnrOfficialUrl, setPnrOfficialUrl] = useState<string>('https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html');
+  const [pnrData, setPnrData] = useState<PNRStatusResponse | null>(null);
 
   // ==========================================
-  // Train Schedule & Timetable State (RailRadar API)
+  // Train Schedule & Timetable State
   // ==========================================
   const [scheduleTrainNumber, setScheduleTrainNumber] = useState('12919');
   const [scheduleHaltsOnly, setScheduleHaltsOnly] = useState(true);
@@ -288,22 +310,13 @@ export const TrainPage: React.FC<TrainPageProps> = ({
   const [scheduleData, setScheduleData] = useState<TrainScheduleResponse | null>(null);
 
   // ==========================================
-  // RailRadar Live GPS Train Tracker State
-  // ==========================================
-  const [railRadarTrainNumber, setRailRadarTrainNumber] = useState('12919');
-  const [railRadarLiveLoading, setRailRadarLiveLoading] = useState(false);
-  const [railRadarLiveError, setRailRadarLiveError] = useState<string | null>(null);
-  const [railRadarLiveData, setRailRadarLiveData] = useState<RailRadarLiveTrainResponse | null>(null);
-
-  // ==========================================
-  // RailRadar Live Station Board State
+  // Live Station Board State
   // ==========================================
   const [stationBoardCode, setStationBoardCode] = useState('INDB');
   const [stationBoardHours, setStationBoardHours] = useState(4);
   const [stationBoardLoading, setStationBoardLoading] = useState(false);
   const [stationBoardError, setStationBoardError] = useState<string | null>(null);
   const [stationBoardData, setStationBoardData] = useState<RailRadarLiveStationResponse | null>(null);
-
 
   const cleanPhone = agencyPhone.replace(/[^0-9]/g, '');
   const cleanWhatsApp = agencyWhatsApp.replace(/[^0-9]/g, '');
@@ -370,7 +383,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
 
   const handleAddOtherPassenger = () => {
     if (otherPassengers.length >= 5) {
-      alert('IRCTC allows a maximum of 6 passengers per single booking form.');
+      setBookingError('IRCTC allows a maximum of 6 passengers per single booking form.');
       return;
     }
     const newPassenger: PassengerDetail = {
@@ -402,7 +415,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
     setOrigin(t.from);
     setDestination(t.to);
     setPreferredTrain(`${t.number} - ${t.name}`);
-    setActiveTab('booking');
+    switchTab('booking');
     window.scrollTo({ top: 380, behavior: 'smooth' });
   };
 
@@ -494,48 +507,106 @@ export const TrainPage: React.FC<TrainPageProps> = ({
     }
   };
 
-  // Check Live Train Status
-  const handleCheckLiveStatus = async (trainNo?: string) => {
-    const targetTrain = trainNo || liveTrainNumber;
-    if (!targetTrain || !targetTrain.trim()) {
-      setLiveStatusError('Please enter a 5-digit Train Number (e.g. 12565, 12140).');
+  // 1. Check Live Train Status (Train Number + Journey Date)
+  const handleCheckLiveStatus = async (trainNo?: string, dateOverride?: string) => {
+    const rawTrain = (trainNo !== undefined ? trainNo : liveTrainNumber).trim();
+    const cleanTrain = rawTrain.replace(/[^0-9]/g, '');
+
+    if (!cleanTrain || !/^\d{4,5}$/.test(cleanTrain)) {
+      setLiveStatusData(null);
+      setLiveStatusErrorCode('INVALID_TRAIN_NUMBER');
+      setLiveStatusError('Please enter a valid 4 or 5-digit numeric Train Number (e.g., 12919, 12952, 12565).');
       return;
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (liveDate > todayStr) {
-      setLiveStatusError('Live train status is not available for future dates. Live running status only applies to trains running today or recent days.');
+    const selectedDate = (dateOverride !== undefined ? dateOverride : liveDate).trim();
+    if (!selectedDate) {
+      setLiveStatusData(null);
+      setLiveStatusErrorCode('INVALID_DATE');
+      setLiveStatusError('Please select a Journey Date to check live train running status.');
+      return;
+    }
+
+    const todayStr = getIstDateIso(0);
+    if (selectedDate > todayStr) {
+      setLiveStatusData(null);
+      setLiveStatusErrorCode('FUTURE_DATE');
+      setLiveStatusError(
+        'Live train running status is not available for future dates. Please select today or a recent start date (in IST), or check the Train Timetable for scheduled timings.'
+      );
       return;
     }
 
     setLiveStatusLoading(true);
     setLiveStatusError(null);
-
-    // Format YYYYMMDD
-    const dateFormatted = liveDate.replace(/-/g, '');
+    setLiveStatusErrorCode(undefined);
+    setLiveStatusData(null);
 
     try {
-      const res = await fetchLiveTrainStatus(targetTrain.trim(), dateFormatted);
+      const res = await fetchLiveTrainStatus(cleanTrain, selectedDate);
       setLiveStatusData(res);
     } catch (err: any) {
-      console.error('Error checking live train status:', err);
-      setLiveStatusError(err.message || 'Could not fetch live train status. Please verify train number.');
+      const apiErr = err as RailwayApiError;
+      setLiveStatusErrorCode(apiErr.errorCode);
+      setLiveStatusError(
+        apiErr.message || 'Could not fetch live train status. Please verify the train number and journey date.'
+      );
     } finally {
       setLiveStatusLoading(false);
     }
   };
 
+  // 2. Check PNR Status (10 Numeric Digits)
+  const handleCheckPnrStatus = async (pnrOverride?: string) => {
+    const rawPnr = (pnrOverride !== undefined ? pnrOverride : pnrInput).trim();
+    const digitsOnly = rawPnr.replace(/[^0-9]/g, '');
 
-  // Check Train Schedule & Timetable (RailRadar API)
+    setPnrData(null);
+    setPnrLimitationNote(null);
+
+    if (!digitsOnly) {
+      setPnrError('Please enter your 10-digit numeric PNR number printed on your IRCTC / PRS ticket.');
+      return;
+    }
+
+    if (!/^\d{10}$/.test(digitsOnly)) {
+      setPnrError(`Invalid PNR format: You entered ${digitsOnly.length} digit(s). A valid Indian Railways PNR must contain exactly 10 numeric digits.`);
+      return;
+    }
+
+    setPnrLoading(true);
+    setPnrError(null);
+
+    try {
+      const res = await fetchPNRStatus(digitsOnly);
+      setPnrData(res);
+    } catch (err: any) {
+      const apiErr = err as RailwayApiError;
+      setPnrError(apiErr.message || 'Unable to retrieve PNR status at this time.');
+      if (apiErr.limitationNote) {
+        setPnrLimitationNote(apiErr.limitationNote);
+      }
+      if (apiErr.officialEnquiryUrl) {
+        setPnrOfficialUrl(apiErr.officialEnquiryUrl);
+      }
+    } finally {
+      setPnrLoading(false);
+    }
+  };
+
+  // 3. Check Train Schedule & Timetable
   const handleCheckSchedule = async (numToUse?: string, haltsOnlyOverride?: boolean) => {
-    const target = (numToUse || scheduleTrainNumber).trim().replace(/[^0-9]/g, '');
-    if (!target || target.length < 4) {
-      setScheduleError('Please enter a valid 5-digit Indian Railways train number (e.g. 12919 or 12140).');
+    const rawInput = (numToUse !== undefined ? numToUse : scheduleTrainNumber).trim();
+    const target = rawInput.replace(/[^0-9]/g, '');
+    if (!target || !/^\d{4,5}$/.test(target)) {
+      setScheduleData(null);
+      setScheduleError('Please enter a valid 4 or 5-digit Indian Railways train number (e.g. 12919, 12952, 12565, 22436, 12860, 12626).');
       return;
     }
 
     setScheduleLoading(true);
     setScheduleError(null);
+    setScheduleData(null);
 
     const useHalts = haltsOnlyOverride !== undefined ? haltsOnlyOverride : scheduleHaltsOnly;
 
@@ -547,61 +618,52 @@ export const TrainPage: React.FC<TrainPageProps> = ({
         setScheduleError(res.error || 'Could not retrieve timetable for this train.');
       }
     } catch (err: any) {
-      console.error('Error fetching train schedule:', err);
-      setScheduleError(err.message || 'Could not retrieve train timetable. Please verify train number.');
+      setScheduleError(err.message || 'Could not retrieve train timetable. Please verify the train number.');
     } finally {
       setScheduleLoading(false);
     }
   };
 
-  // RailRadar Live Train GPS Status Handler (GET /v1/trains/{number}/live)
-  const handleCheckRailRadarLiveTrain = async (numToUse?: string) => {
-    const target = (numToUse || railRadarTrainNumber).trim().replace(/[^0-9]/g, '');
-    if (!target) {
-      setRailRadarLiveError('Please enter a valid train number (e.g. 12919 or 12952).');
+  // 4. Live Station Board Handler
+  const handleCheckStationBoard = async (stnInput?: string, hoursOverride?: number) => {
+    const rawTarget = (stnInput !== undefined ? stnInput : stationBoardCode).trim();
+    if (!rawTarget) {
+      setStationBoardData(null);
+      setStationBoardError('Please enter a station name or IRCTC station code (e.g. Indore, INDB, New Delhi, NDLS, CSMT).');
       return;
     }
-    setRailRadarLiveLoading(true);
-    setRailRadarLiveError(null);
-    try {
-      const res = await fetchRailRadarLiveTrain(target);
-      if (res && res.success) {
-        setRailRadarLiveData(res);
-      } else {
-        setRailRadarLiveError(res.error || 'Could not retrieve live GPS tracking data.');
-      }
-    } catch (err: any) {
-      console.error('Error fetching RailRadar live train:', err);
-      setRailRadarLiveError(err.message || 'Could not connect to RailRadar live tracker.');
-    } finally {
-      setRailRadarLiveLoading(false);
-    }
-  };
 
-  // RailRadar Live Station Board Handler (GET /v1/stations/{code}/live?hours=4)
-  const handleCheckStationBoard = async (stnCode?: string, hoursOverride?: number) => {
-    const target = (stnCode || stationBoardCode).trim().toUpperCase();
-    if (!target) {
-      setStationBoardError('Please enter a station code (e.g. INDB, NDLS, CSMT).');
-      return;
-    }
+    const resolvedCode = extractStationCode(rawTarget) || rawTarget.toUpperCase();
     const hrs = hoursOverride !== undefined ? hoursOverride : stationBoardHours;
+
     setStationBoardLoading(true);
     setStationBoardError(null);
+    setStationBoardData(null);
+
     try {
-      const res = await fetchRailRadarLiveStation(target, hrs);
+      const res = await fetchRailRadarLiveStation(resolvedCode, hrs);
       if (res && res.success) {
         setStationBoardData(res);
       } else {
         setStationBoardError(res.error || 'Could not retrieve live station board.');
       }
     } catch (err: any) {
-      console.error('Error fetching RailRadar station board:', err);
-      setStationBoardError(err.message || 'Could not connect to RailRadar station board.');
+      setStationBoardError(err.message || 'Could not connect to live station service.');
     } finally {
       setStationBoardLoading(false);
     }
   };
+
+  // Automatically load initial data when user opens Live Train Status, Live Station, or Timetable
+  useEffect(() => {
+    if (activeTab === 'live-status' && !liveStatusData && !liveStatusLoading && !liveStatusError) {
+      handleCheckLiveStatus(liveTrainNumber || '12919', liveDate);
+    } else if (activeTab === 'live-station' && !stationBoardData && !stationBoardLoading && !stationBoardError) {
+      handleCheckStationBoard(stationBoardCode || 'INDB', stationBoardHours);
+    } else if (activeTab === 'schedule' && !scheduleData && !scheduleLoading && !scheduleError) {
+      handleCheckSchedule(scheduleTrainNumber || '12919');
+    }
+  }, [activeTab]);
 
 
   return (
@@ -644,9 +706,9 @@ export const TrainPage: React.FC<TrainPageProps> = ({
               {/* Brand Header with Official Logo */}
               <div className="flex items-start sm:items-center gap-4 mb-4">
                 <img
-                  src="/logo.svg"
+                  src={OFFICIAL_LOGO_URL}
                   alt="Aazam Travel Agency Official Logo"
-                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain shrink-0 drop-shadow-xl rounded-2xl bg-white/10 p-2 border border-white/20"
+                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain shrink-0 drop-shadow-xl rounded-2xl bg-white p-1.5 border border-white/20"
                 />
                 <div>
                   <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/20 border border-orange-400/40 text-orange-300 text-xs font-bold mb-1 backdrop-blur-sm">
@@ -654,7 +716,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                     <span>Aazam Travel Agency · Pan-India Online Booking</span>
                   </div>
                   <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white leading-tight">
-                    IRCTC Train Ticket Reservation, Live Status & Timetable Desk
+                    IRCTC Train Ticket Reservation, Live Status, PNR & Timetable Desk
                   </h1>
                 </div>
               </div>
@@ -662,8 +724,8 @@ export const TrainPage: React.FC<TrainPageProps> = ({
               <p className="text-sm sm:text-base text-slate-200 leading-relaxed mb-6">
                 Official online railway portal for travelers across India: 
                 instant ticket reservation with <strong>multi-passenger manifests</strong>, 
-                real-time <strong>Live Train Running Status (GPS)</strong>, <strong>Live Station Arrivals Board</strong>, and 
-                complete <strong>Train Schedules & Route Timetables</strong> via RailRadar API.
+                real-time <strong>Live Train Running Status</strong>, <strong>10-Digit PNR Status Check</strong>, <strong>Live Station Arrivals Board</strong>, and 
+                complete <strong>Train Schedules & Route Timetables</strong>.
               </p>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
@@ -676,8 +738,8 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                   <span className="text-sm font-black text-white">All 7,000+ Stations</span>
                 </div>
                 <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15">
-                  <span className="text-[10px] text-orange-300 font-bold uppercase tracking-wider block">Official APIs</span>
-                  <span className="text-sm font-black text-white">RailRadar & IndianRail</span>
+                  <span className="text-[10px] text-orange-300 font-bold uppercase tracking-wider block">Railway Tools</span>
+                  <span className="text-sm font-black text-white">Status · PNR · Timetable</span>
                 </div>
                 <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15">
                   <span className="text-[10px] text-orange-300 font-bold uppercase tracking-wider block">Desk Helpline</span>
@@ -691,16 +753,16 @@ export const TrainPage: React.FC<TrainPageProps> = ({
         </div>
       </section>
 
-      {/* Top Interactive Tabs: Booking | Live Train Status | PNR Check */}
+      {/* Top Interactive Tabs: Booking | Live Train Status | PNR Check | Live Station | Timetable */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 relative z-20">
         <div className="bg-white rounded-3xl shadow-xl border border-slate-200/90 overflow-hidden">
           
           {/* Tab Navigation Header */}
           <div className="bg-slate-900 border-b border-slate-800 p-2 sm:p-3 flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+            <div className="flex items-center gap-1.5 overflow-x-auto w-full xl:w-auto pb-1 xl:pb-0">
               <button
                 type="button"
-                onClick={() => setActiveTab('booking')}
+                onClick={() => switchTab('booking')}
                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === 'booking'
                     ? 'bg-orange-500 text-white shadow-md'
@@ -708,15 +770,12 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                 }`}
               >
                 <Train className="w-4 h-4" />
-                <span>1. Book Tickets (Online)</span>
+                <span>Book Train Tickets</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => {
-                  setActiveTab('live-status');
-                  if (!railRadarLiveData) handleCheckRailRadarLiveTrain('12919');
-                }}
+                onClick={() => switchTab('live-status')}
                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === 'live-status'
                     ? 'bg-orange-500 text-white shadow-md'
@@ -724,18 +783,25 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                 }`}
               >
                 <Activity className="w-4 h-4" />
-                <span>2. Live GPS Tracker</span>
-                <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-white text-[9px] font-black uppercase">
-                  RailRadar
-                </span>
+                <span>Live Train Status</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => {
-                  setActiveTab('live-station');
-                  if (!stationBoardData) handleCheckStationBoard('INDB', 4);
-                }}
+                onClick={() => switchTab('pnr-status')}
+                className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                  activeTab === 'pnr-status'
+                    ? 'bg-orange-500 text-white shadow-md'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <FileCheck className="w-4 h-4" />
+                <span>PNR Status Check</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchTab('live-station')}
                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === 'live-station'
                     ? 'bg-orange-500 text-white shadow-md'
@@ -743,16 +809,16 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                 }`}
               >
                 <Building className="w-4 h-4" />
-                <span>3. Station Live Board</span>
-                <span className="px-1.5 py-0.5 rounded-md bg-sky-500 text-white text-[9px] font-black uppercase">
-                  RailRadar
-                </span>
+                <span>Live Station</span>
               </button>
+
               <button
                 type="button"
                 onClick={() => {
-                  setActiveTab('schedule');
-                  if (!scheduleData) handleCheckSchedule('12919');
+                  switchTab('schedule');
+                  if (!scheduleData && !scheduleLoading) {
+                    handleCheckSchedule(scheduleTrainNumber || '12919');
+                  }
                 }}
                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === 'schedule'
@@ -761,15 +827,12 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                 }`}
               >
                 <CalendarDays className="w-4 h-4" />
-                <span>4. Timetable</span>
-                <span className="px-1.5 py-0.5 rounded-md bg-indigo-500 text-white text-[9px] font-black uppercase">
-                  RailRadar
-                </span>
+                <span>Train Timetable</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => setActiveTab('station-search')}
+                onClick={() => switchTab('station-search')}
                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                   activeTab === 'station-search'
                     ? 'bg-orange-500 text-white shadow-md'
@@ -777,10 +840,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                 }`}
               >
                 <Search className="w-4 h-4" />
-                <span>5. All Stations & Codes</span>
-                <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-white text-[9px] font-black uppercase">
-                  Directory
-                </span>
+                <span>Station Codes</span>
               </button>
             </div>
 
@@ -799,9 +859,9 @@ export const TrainPage: React.FC<TrainPageProps> = ({
               <div className="bg-gradient-to-r from-slate-900 via-[#0B2545] to-[#133E68] p-5 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/logo.svg"
+                    src={OFFICIAL_LOGO_URL}
                     alt="Aazam Travel Agency Official Logo"
-                    className="w-12 h-12 rounded-xl object-contain bg-white/10 p-1.5 border border-white/20 shrink-0 drop-shadow-md"
+                    className="w-12 h-12 rounded-xl object-contain bg-white p-1 border border-white/20 shrink-0 drop-shadow-md"
                   />
                   <div>
                     <div className="flex items-center gap-2">
@@ -1395,7 +1455,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* TAB 2: LIVE TRAIN RUNNING STATUS TRACKER */}
+          {/* TAB 2: LIVE TRAIN RUNNING STATUS */}
           {/* ========================================================= */}
           {activeTab === 'live-status' && (
             <div className="p-6 sm:p-8 space-y-6">
@@ -1403,17 +1463,17 @@ export const TrainPage: React.FC<TrainPageProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/logo.svg"
+                    src={OFFICIAL_LOGO_URL}
                     alt="Aazam Travel Agency Official Logo"
-                    className="w-10 h-10 rounded-xl object-contain bg-slate-100 p-1 border border-slate-200 shrink-0"
+                    className="w-11 h-11 rounded-xl object-contain bg-white p-1 border border-slate-200 shrink-0 shadow-2xs"
                   />
                   <div>
                     <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
                       <Activity className="w-5 h-5 text-emerald-600" />
-                      Live Train Running Status & GPS Speed Tracker
+                      Live Train Running Status
                     </h2>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      Powered by RailRadar API: Real-time GPS location, actual running speed km/h, bearing, route diversion exceptions & delay monitoring.
+                      Enter a 5-digit Train Number and Journey Start Date to check real-time running position, last reported station, delay, next stop & expected arrival.
                     </p>
                   </div>
                 </div>
@@ -1431,8 +1491,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                       type="button"
                       onClick={() => {
                         setLiveTrainNumber(item.num);
-                        setRailRadarTrainNumber(item.num);
-                        handleCheckRailRadarLiveTrain(item.num);
+                        handleCheckLiveStatus(item.num, liveDate);
                       }}
                       className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs border border-emerald-200 transition-colors"
                     >
@@ -1442,125 +1501,263 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                 </div>
               </div>
 
-              {/* Input Search Form */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-3">
-                <div className="w-full sm:w-1/2 space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 block">
-                    Train Number (5 Digits) *
+              {/* Input Search Form: Train Number + Journey Date */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleCheckLiveStatus(liveTrainNumber, liveDate);
+                }}
+                className="bg-slate-50 p-5 rounded-2xl border border-slate-200 grid grid-cols-1 md:grid-cols-12 gap-4 items-end"
+              >
+                <div className="md:col-span-5 space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Train Number (4 or 5 Digits) *
                   </label>
                   <div className="relative">
                     <input
                       type="text"
+                      maxLength={5}
                       value={liveTrainNumber}
-                      onChange={(e) => {
-                        setLiveTrainNumber(e.target.value);
-                        setRailRadarTrainNumber(e.target.value);
-                      }}
-                      placeholder="e.g. 12919 or 12952"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none text-sm font-bold text-slate-800 bg-white"
+                      onChange={(e) => setLiveTrainNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                      placeholder="Enter Train No. (e.g. 12919, 12952)"
+                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none text-sm font-mono font-bold text-slate-800 bg-white"
                     />
                     <Train className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
                   </div>
                 </div>
 
-                <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 sm:self-end">
-                  <button
-                    type="button"
-                    disabled={railRadarLiveLoading}
-                    onClick={() => handleCheckRailRadarLiveTrain(liveTrainNumber)}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors"
-                  >
-                    {railRadarLiveLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Tracking GPS...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Radio className="w-4 h-4" />
-                        <span>Live GPS Status (RailRadar)</span>
-                      </>
-                    )}
-                  </button>
+                <div className="md:col-span-4 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700">
+                      Journey Start Date *
+                    </label>
+                    <div className="flex items-center gap-1 text-[10px]">
+                      {[
+                        { label: 'Today', offset: 0 },
+                        { label: 'Yesterday', offset: -1 },
+                        { label: '2 Days Ago', offset: -2 },
+                      ].map((btn) => {
+                        const iso = getIstDateIso(btn.offset);
+                        return (
+                          <button
+                            key={btn.label}
+                            type="button"
+                            onClick={() => setLiveDate(iso)}
+                            className={`px-1.5 py-0.5 rounded font-bold transition-colors ${
+                              liveDate === iso
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                            }`}
+                          >
+                            {btn.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <input
+                    type="date"
+                    value={liveDate}
+                    max={getIstDateIso(0)}
+                    onChange={(e) => setLiveDate(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-500 outline-none text-sm font-bold text-slate-800 bg-white"
+                  />
+                </div>
 
+                <div className="md:col-span-3">
                   <button
-                    type="button"
+                    type="submit"
                     disabled={liveStatusLoading}
-                    onClick={() => handleCheckLiveStatus(liveTrainNumber)}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors"
+                    className="w-full px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors h-[42px]"
                   >
                     {liveStatusLoading ? (
                       <>
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Loading...</span>
+                        <span>Checking Live Status...</span>
                       </>
                     ) : (
                       <>
-                        <Calendar className="w-4 h-4" />
-                        <span>Date Schedule</span>
+                        <Radio className="w-4 h-4" />
+                        <span>Check Live Train Status</span>
                       </>
                     )}
                   </button>
                 </div>
-              </div>
+              </form>
 
+              {/* Error State with Retry & Official Alternative */}
               {liveStatusError && (
-                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{liveStatusError}</span>
+                <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1 flex-1">
+                      <h3 className="text-sm font-bold text-rose-900">
+                        Live Train Running Status Unavailable
+                      </h3>
+                      <p className="text-xs text-rose-800 leading-relaxed">
+                        {liveStatusError}
+                      </p>
+                      {liveStatusErrorCode === 'API_KEY_MISSING' && (
+                        <p className="text-[11px] text-rose-700">
+                          Note: We never display fabricated train locations or fake delays. You can view the official static timetable for this train or check live movement on the official Indian Railways NTES portal.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      disabled={liveStatusLoading}
+                      onClick={() => handleCheckLiveStatus(liveTrainNumber, liveDate)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${liveStatusLoading ? 'animate-spin' : ''}`} />
+                      <span>Retry Live Status</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScheduleTrainNumber(liveTrainNumber || '12919');
+                        switchTab('schedule');
+                        handleCheckSchedule(liveTrainNumber || '12919');
+                      }}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#0B2545] hover:bg-slate-900 text-white font-bold text-xs shadow-xs transition-colors"
+                    >
+                      <CalendarDays className="w-3.5 h-3.5 text-orange-400" />
+                      <span>View Scheduled Timetable</span>
+                    </button>
+
+                    <a
+                      href="https://enquiry.indianrail.gov.in/mntes/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-bold text-xs transition-colors"
+                    >
+                      <span>Official NTES Enquiry</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                    </a>
+                  </div>
                 </div>
               )}
 
               {/* Status Results Display */}
               {liveStatusData && (
                 <div className="space-y-6 animate-fadeIn">
-                  {/* Top Train Banner */}
-                  <div className="bg-gradient-to-r from-[#0B2545] to-[#164069] rounded-2xl p-5 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="px-2.5 py-0.5 rounded-lg bg-orange-500 text-white font-black text-xs">
-                          TRAIN #{liveStatusData.TrainNumber}
-                        </span>
-                        <span className="text-xs text-slate-300">
-                          Journey Start: {liveStatusData.StartDate}
-                        </span>
-                      </div>
-                      <h3 className="text-lg font-black text-white">
-                        {liveStatusData.TrainName || `Train #${liveStatusData.TrainNumber}`}
-                      </h3>
-                      {liveStatusData.CurrentPosition && (
-                        <p className="text-xs text-orange-300 font-medium mt-1 flex items-center gap-1.5">
-                          <Navigation className="w-3.5 h-3.5" />
-                          <span>{liveStatusData.CurrentPosition}</span>
-                        </p>
-                      )}
-                    </div>
+                  {(() => {
+                    const explicitNext = (liveStatusData as any).NextStation;
+                    const routeNext = liveStatusData.TrainRoute?.find(
+                      (s) => s.IsDeparted === 'NO' && s.StationCode !== liveStatusData.CurrentStation?.StationCode
+                    );
+                    const nextStn = explicitNext || routeNext;
+                    const rawUpdated = liveStatusData.LastUpdated || (liveStatusData as any).LastUpdatedAt;
+                    let updatedTime = 'Just now';
+                    if (rawUpdated) {
+                      const parsedDt = new Date(rawUpdated);
+                      updatedTime = !isNaN(parsedDt.getTime()) && String(rawUpdated).includes('T')
+                        ? parsedDt.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          })
+                        : String(rawUpdated);
+                    }
 
-                    {/* Current Station Badge */}
-                    {liveStatusData.CurrentStation && (
-                      <div className="bg-white/10 rounded-xl p-3 border border-white/15 text-right self-stretch md:self-auto">
-                        <span className="text-[10px] text-orange-300 uppercase tracking-wider block font-bold">
-                          Current / Next Station
-                        </span>
-                        <span className="text-base font-black text-white block">
-                          {liveStatusData.CurrentStation.StationName} ({liveStatusData.CurrentStation.StationCode})
-                        </span>
-                        <span className={`text-[11px] font-bold inline-block px-2 py-0.5 rounded mt-1 ${
-                          liveStatusData.CurrentStation.DelayInArrival === '00 M' || liveStatusData.CurrentStation.DelayInArrival === '-'
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-amber-400 text-slate-900'
-                        }`}>
-                          Delay: {liveStatusData.CurrentStation.DelayInArrival || 'On-Time'}
-                        </span>
+                    return (
+                      <div className="bg-gradient-to-r from-[#0B2545] to-[#164069] rounded-2xl p-5 text-white space-y-4">
+                        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-white/15 pb-4">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <span className="px-2.5 py-0.5 rounded-lg bg-orange-500 text-white font-black text-xs">
+                                TRAIN #{liveStatusData.TrainNumber}
+                              </span>
+                              <span className="text-xs text-slate-300">
+                                Journey Start Date: <strong>{liveStatusData.StartDate}</strong>
+                              </span>
+                              <span className="text-[11px] text-emerald-300 font-semibold flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                <span>Updated: {updatedTime}</span>
+                              </span>
+                            </div>
+                            <h3 className="text-lg sm:text-xl font-black text-white">
+                              {liveStatusData.TrainName || `Train #${liveStatusData.TrainNumber}`}
+                            </h3>
+                            {liveStatusData.CurrentPosition && (
+                              <p className="text-xs text-orange-300 font-medium mt-1 flex items-center gap-1.5">
+                                <Navigation className="w-3.5 h-3.5" />
+                                <span>{liveStatusData.CurrentPosition}</span>
+                              </p>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCheckLiveStatus(liveTrainNumber, liveDate)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition-colors"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            <span>Refresh Status</span>
+                          </button>
+                        </div>
+
+                        {/* Key Live Status Metrics: Last Reported Station, Delay, Next Station, Expected Arrival */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                          <div className="bg-white/10 rounded-xl p-3 border border-white/15">
+                            <span className="text-[10px] text-orange-300 uppercase tracking-wider block font-bold">
+                              Last Reported Station
+                            </span>
+                            <span className="text-sm font-black text-white block mt-0.5">
+                              {liveStatusData.CurrentStation
+                                ? `${liveStatusData.CurrentStation.StationName} (${liveStatusData.CurrentStation.StationCode})`
+                                : 'Reported on Route'}
+                            </span>
+                          </div>
+
+                          <div className="bg-white/10 rounded-xl p-3 border border-white/15">
+                            <span className="text-[10px] text-orange-300 uppercase tracking-wider block font-bold">
+                              Running Delay Status
+                            </span>
+                            <span className="text-sm font-black text-white block mt-0.5">
+                              {liveStatusData.CurrentStation?.DelayInArrival || 'On Time (00 M)'}
+                            </span>
+                          </div>
+
+                          <div className="bg-white/10 rounded-xl p-3 border border-white/15">
+                            <span className="text-[10px] text-sky-300 uppercase tracking-wider block font-bold">
+                              Next Upcoming Station
+                            </span>
+                            <span className="text-sm font-black text-white block mt-0.5">
+                              {nextStn
+                                ? `${nextStn.StationName} (${nextStn.StationCode})`
+                                : liveStatusData.CurrentStation
+                                ? `${liveStatusData.CurrentStation.StationName} (${liveStatusData.CurrentStation.StationCode})`
+                                : '--'}
+                            </span>
+                          </div>
+
+                          <div className="bg-white/10 rounded-xl p-3 border border-white/15">
+                            <span className="text-[10px] text-emerald-300 uppercase tracking-wider block font-bold">
+                              Expected Arrival (Next)
+                            </span>
+                            <span className="text-sm font-black text-white block mt-0.5 font-mono">
+                              {nextStn
+                                ? nextStn.ExpectedArrival || nextStn.ActualArrival || nextStn.ScheduleArrival || '--'
+                                : liveStatusData.CurrentStation?.ActualArrival ||
+                                  liveStatusData.CurrentStation?.ScheduleArrival ||
+                                  '--'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   {/* Route Timeline / Stations Table */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                     <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                       <span className="font-bold text-xs text-slate-800 uppercase tracking-wider">
-                        Full Route Schedule & Station Delays
+                        Full Route Running Status & Station Delays
                       </span>
                       <span className="text-xs text-slate-500">
                         {liveStatusData.TrainRoute?.length || 0} Stations on Route
@@ -1575,10 +1772,10 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                             <th className="px-4 py-3">Station</th>
                             <th className="px-4 py-3">Code</th>
                             <th className="px-4 py-3">Sch. Arrival</th>
-                            <th className="px-4 py-3">Act. Arrival</th>
-                            <th className="px-4 py-3">Delay Arr.</th>
+                            <th className="px-4 py-3">Act./Est. Arrival</th>
+                            <th className="px-4 py-3">Delay</th>
                             <th className="px-4 py-3">Sch. Depart</th>
-                            <th className="px-4 py-3">Act. Depart</th>
+                            <th className="px-4 py-3">Act./Est. Depart</th>
                             <th className="px-4 py-3">Status</th>
                           </tr>
                         </thead>
@@ -1602,20 +1799,20 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                     : 'bg-slate-50/40'
                                 }`}
                               >
-                                <td className="px-4 py-3 text-slate-500">{stn.SerialNo || idx}</td>
+                                <td className="px-4 py-3 text-slate-500">{stn.SerialNo || idx + 1}</td>
                                 <td className="px-4 py-3">
                                   <span className="font-bold text-slate-800">{stn.StationName}</span>
                                   {isCurrent && (
                                     <span className="ml-2 px-1.5 py-0.5 rounded bg-orange-500 text-white text-[9px] uppercase font-black">
-                                      CURRENT
+                                      LAST REPORTED
                                     </span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 font-mono font-bold text-orange-600">
                                   {stn.StationCode}
                                 </td>
-                                <td className="px-4 py-3 text-slate-600">{stn.ScheduleArrival}</td>
-                                <td className="px-4 py-3 font-semibold text-slate-800">
+                                <td className="px-4 py-3 text-slate-600 font-mono">{stn.ScheduleArrival}</td>
+                                <td className="px-4 py-3 font-semibold text-slate-800 font-mono">
                                   {stn.ActualArrival}
                                 </td>
                                 <td className="px-4 py-3">
@@ -1629,8 +1826,8 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                     {stn.DelayInArrival}
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 text-slate-600">{stn.ScheduleDeparture}</td>
-                                <td className="px-4 py-3 font-semibold text-slate-800">
+                                <td className="px-4 py-3 text-slate-600 font-mono">{stn.ScheduleDeparture}</td>
+                                <td className="px-4 py-3 font-semibold text-slate-800 font-mono">
                                   {stn.ActualDeparture}
                                 </td>
                                 <td className="px-4 py-3">
@@ -1659,7 +1856,224 @@ export const TrainPage: React.FC<TrainPageProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* TAB 3: RAILRADAR LIVE STATION BOARD */}
+          {/* TAB 3: PNR STATUS CHECK (10 NUMERIC DIGITS) */}
+          {/* ========================================================= */}
+          {activeTab === 'pnr-status' && (
+            <div className="p-6 sm:p-8 space-y-6">
+              {/* Header with Agency Logo */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={OFFICIAL_LOGO_URL}
+                    alt="Aazam Travel Agency Official Logo"
+                    className="w-11 h-11 rounded-xl object-contain bg-white p-1 border border-slate-200 shrink-0 shadow-2xs"
+                  />
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                      <FileCheck className="w-5 h-5 text-orange-600" />
+                      IRCTC 10-Digit PNR Status Check
+                    </h2>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Enter your 10-digit numeric PNR number to verify real-time seat confirmation, RAC/Waitlist movement, and chart preparation status.
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href="https://www.indianrail.gov.in/enquiry/PNR/PnrEnquiry.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs border border-slate-200 transition-colors self-start sm:self-auto"
+                >
+                  <span>Official IndianRail PNR Portal</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                </a>
+              </div>
+
+              {/* PNR Input Form */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleCheckPnrStatus();
+                }}
+                className="bg-slate-50 p-5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-end gap-4"
+              >
+                <div className="flex-1 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700">
+                      10-Digit PNR Number (Numeric Only) *
+                    </label>
+                    <span className={`text-[11px] font-mono font-bold ${
+                      pnrInput.length === 10 ? 'text-emerald-600' : 'text-slate-500'
+                    }`}>
+                      {pnrInput.length}/10 digits
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={pnrInput}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                        setPnrInput(clean);
+                        if (pnrError) setPnrError(null);
+                      }}
+                      placeholder="Enter 10-digit PNR (e.g. 2458910342)"
+                      className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-300 focus:border-orange-500 outline-none text-base font-mono font-bold tracking-widest text-slate-900 bg-white"
+                    />
+                    <FileCheck className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={pnrLoading}
+                  className="px-6 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-orange-500/20 transition-all"
+                >
+                  {pnrLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Checking PNR...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4" />
+                      <span>Check PNR Status</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {/* PNR Error or Provider Limitation Notice */}
+              {pnrError && (
+                <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5 flex-1">
+                      <h3 className="text-sm font-bold text-amber-950">
+                        PNR Enquiry Notice
+                      </h3>
+                      <p className="text-xs text-amber-900 font-medium leading-relaxed">
+                        {pnrError}
+                      </p>
+                      {pnrLimitationNote && (
+                        <p className="text-xs text-amber-800 leading-relaxed bg-white/70 p-3 rounded-xl border border-amber-200/80">
+                          <strong>Provider Limitation & Security Policy:</strong> {pnrLimitationNote} We never fabricate ticket confirmations, passenger details, coach numbers, or berth allocations.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <a
+                      href={pnrOfficialUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0B2545] hover:bg-slate-900 text-white font-bold text-xs shadow-sm transition-colors"
+                    >
+                      <span>Open Official Indian Railways PNR Enquiry</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-orange-400" />
+                    </a>
+
+                    <button
+                      type="button"
+                      disabled={pnrLoading}
+                      onClick={() => handleCheckPnrStatus()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 font-bold text-xs transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${pnrLoading ? 'animate-spin' : ''}`} />
+                      <span>Retry PNR Check</span>
+                    </button>
+
+                    <a
+                      href={`https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(
+                        `Hello Aazam Travel Agency, please check the current status for my 10-digit PNR: ${pnrInput || ''}`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Check PNR via WhatsApp Desk</span>
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Real PNR Response Display (Only rendered when real upstream API returns valid data) */}
+              {pnrData && (
+                <div className="space-y-5 animate-fadeIn">
+                  <div className="bg-gradient-to-r from-[#0B2545] to-[#133E68] rounded-2xl p-5 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="px-2.5 py-0.5 rounded bg-orange-500 text-white font-mono font-black text-xs">
+                          PNR: {pnrData.PnrNumber}
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-white/15 text-xs font-bold">
+                          Class: {pnrData.JourneyClass || 'N/A'}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-black text-white">
+                        {pnrData.TrainNumber} — {pnrData.TrainName}
+                      </h3>
+                      <p className="text-xs text-sky-200 mt-1">
+                        Route: <strong>{pnrData.From}</strong> ➔ <strong>{pnrData.To}</strong> · Journey Date: <strong>{pnrData.JourneyDate}</strong>
+                      </p>
+                    </div>
+
+                    <div className="bg-white/10 rounded-xl p-3 border border-white/15 text-right">
+                      <span className="text-[10px] text-orange-300 uppercase font-bold block">
+                        Chart Preparation Status
+                      </span>
+                      <span className="text-sm font-black text-white">
+                        {pnrData.ChatPrepared === 'YES' || pnrData.ChatPrepared === 'true'
+                          ? 'Chart Prepared'
+                          : 'Chart Not Prepared'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Passengers Status Table */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                    <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 font-bold text-xs text-slate-800 uppercase tracking-wider">
+                      Passenger Booking & Current Status
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold uppercase text-[10px]">
+                          <tr>
+                            <th className="px-4 py-3">Passenger</th>
+                            <th className="px-4 py-3">Booking Status (Coach / Berth / Quota)</th>
+                            <th className="px-4 py-3">Current Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(pnrData.Passangers || []).map((p, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50">
+                              <td className="px-4 py-3 font-bold text-slate-800">
+                                {p.Passenger || `Passenger ${idx + 1}`}
+                              </td>
+                              <td className="px-4 py-3 font-mono text-slate-700">
+                                {p.BookingStatus}
+                              </td>
+                              <td className="px-4 py-3 font-mono font-bold text-emerald-700">
+                                {p.CurrentStatus}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 4: LIVE STATION ARRIVALS & DEPARTURES BOARD */}
           {/* ========================================================= */}
           {activeTab === 'live-station' && (
             <TrainStationBoard
@@ -1672,16 +2086,16 @@ export const TrainPage: React.FC<TrainPageProps> = ({
               stationBoardData={stationBoardData}
               onFetchStationBoard={handleCheckStationBoard}
               onTrackLive={(trainNum) => {
-                setRailRadarTrainNumber(trainNum);
-                setActiveTab('live-status');
-                handleCheckRailRadarLiveTrain(trainNum);
+                setLiveTrainNumber(trainNum);
+                switchTab('live-status');
+                handleCheckLiveStatus(trainNum, liveDate);
               }}
               cleanWhatsApp={cleanWhatsApp}
             />
           )}
 
           {/* ========================================================= */}
-          {/* TAB 4: TRAIN SCHEDULE & ROUTE TIMETABLE (RailRadar API) */}
+          {/* TAB 5: TRAIN SCHEDULE & ROUTE TIMETABLE */}
           {/* ========================================================= */}
           {activeTab === 'schedule' && (
             <div className="p-6 sm:p-8 space-y-6">
@@ -1689,29 +2103,30 @@ export const TrainPage: React.FC<TrainPageProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
                 <div className="flex items-center gap-3">
                   <img
-                    src="/logo.svg"
+                    src={OFFICIAL_LOGO_URL}
                     alt="Aazam Travel Agency Official Logo"
-                    className="w-10 h-10 rounded-xl object-contain bg-slate-100 p-1 border border-slate-200 shrink-0"
+                    className="w-11 h-11 rounded-xl object-contain bg-white p-1 border border-slate-200 shrink-0 shadow-2xs"
                   />
                   <div>
                     <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
                       <CalendarDays className="w-5 h-5 text-sky-600" />
-                      Indian Railways Train Schedule & Route Timetable
+                      Indian Railways Train Timetable & Route Schedule
                     </h2>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      Powered by RailRadar API: Complete stoppage list, platform numbers, timings, run days, speeds & coach composition.
+                      Official scheduled route timetable: station names & codes, scheduled arrival/departure times, stop duration, and distances.
                     </p>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="text-slate-500 font-bold">Quick Trains:</span>
+                  <span className="text-slate-500 font-bold">Popular Trains:</span>
                   {[
                     { num: '12919', name: 'Malwa SF Exp' },
                     { num: '12952', name: 'Mumbai Rajdhani' },
                     { num: '12565', name: 'Bihar Sampark Kranti' },
                     { num: '22436', name: 'Vande Bharat' },
-                    { num: '12860', name: 'Gitanjali Exp' }
+                    { num: '12860', name: 'Gitanjali Exp' },
+                    { num: '12626', name: 'Kerala Exp' },
                   ].map((t) => (
                     <button
                       key={t.num}
@@ -1720,20 +2135,50 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                         setScheduleTrainNumber(t.num);
                         handleCheckSchedule(t.num);
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 font-bold text-xs border border-sky-200 transition-colors"
+                      className={`px-2.5 py-1 rounded-lg font-bold text-xs border transition-colors ${
+                        scheduleTrainNumber === t.num
+                          ? 'bg-sky-600 text-white border-sky-600'
+                          : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'
+                      }`}
                       title={t.name}
                     >
-                      #{t.num}
+                      #{t.num} <span className="font-normal text-[10px] opacity-85">({t.name})</span>
                     </button>
                   ))}
                 </div>
               </div>
 
+              {/* Clear Scheduled Timetable Notice Banner */}
+              <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Info className="w-4 h-4 text-sky-600 shrink-0" />
+                  <span>
+                    <strong>Scheduled Timetable Information:</strong> The timings below represent the official static railway schedule, not live running status or real-time delays.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLiveTrainNumber(scheduleTrainNumber || '12919');
+                    switchTab('live-status');
+                  }}
+                  className="text-sky-700 hover:text-sky-900 font-bold underline whitespace-nowrap text-left sm:text-right"
+                >
+                  Switch to Live Train Status →
+                </button>
+              </div>
+
               {/* Input Form Bar */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center gap-3">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleCheckSchedule();
+                }}
+                className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center gap-3"
+              >
                 <div className="w-full md:flex-1 space-y-1">
                   <label className="text-[11px] font-bold text-slate-700 block">
-                    Train Number (5 Digits) *
+                    Train Number (4 or 5 Digits) *
                   </label>
                   <div className="relative">
                     <input
@@ -1741,7 +2186,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                       maxLength={5}
                       value={scheduleTrainNumber}
                       onChange={(e) => setScheduleTrainNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                      placeholder="e.g. 12919 or 12140"
+                      placeholder="e.g. 12919, 12952, 12565, 22436, 12860, 12626"
                       className="w-full pl-3.5 pr-10 py-2.5 rounded-xl border border-slate-300 focus:border-sky-500 outline-none text-base font-mono font-bold text-slate-800 bg-white"
                     />
                     <Train className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
@@ -1766,9 +2211,8 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                   </label>
 
                   <button
-                    type="button"
+                    type="submit"
                     disabled={scheduleLoading}
-                    onClick={() => handleCheckSchedule()}
                     className="flex-1 md:flex-none px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors"
                   >
                     {scheduleLoading ? (
@@ -1784,12 +2228,41 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                     )}
                   </button>
                 </div>
-              </div>
+              </form>
 
               {scheduleError && (
-                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{scheduleError}</span>
+                <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="space-y-1 flex-1">
+                      <h3 className="text-sm font-bold text-rose-900">
+                        Timetable Lookup Notice
+                      </h3>
+                      <p className="text-xs text-rose-800 leading-relaxed">
+                        {scheduleError}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      disabled={scheduleLoading}
+                      onClick={() => handleCheckSchedule()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition-colors"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${scheduleLoading ? 'animate-spin' : ''}`} />
+                      <span>Retry Timetable Search</span>
+                    </button>
+                    <a
+                      href="https://enquiry.indianrail.gov.in/mntes/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-bold text-xs transition-colors"
+                    >
+                      <span>Official NTES Train Schedule</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                    </a>
+                  </div>
                 </div>
               )}
 
@@ -1804,22 +2277,20 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                           <span className="px-2.5 py-0.5 rounded-md bg-sky-500 text-white text-[11px] font-black uppercase tracking-wider">
                             Train #{scheduleData.data.train.number}
                           </span>
+                          <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black uppercase">
+                            Scheduled Timetable (Static)
+                          </span>
                           <span className="px-2 py-0.5 rounded bg-emerald-500 text-white text-[10px] font-black uppercase">
                             {scheduleData.data.train.type || 'Superfast Express'}
                           </span>
-                          {scheduleData.data.train.category && (
-                            <span className="px-2 py-0.5 rounded bg-amber-500/80 text-white text-[10px] font-bold">
-                              {scheduleData.data.train.category}
-                            </span>
-                          )}
                         </div>
                         <h3 className="text-2xl font-black text-white tracking-tight">
                           {scheduleData.data.train.name}
                         </h3>
                         <div className="flex items-center gap-2 text-xs text-sky-200 mt-1 font-medium">
-                          <span>{scheduleData.data.train.source.name} ({scheduleData.data.train.source.code})</span>
+                          <span>Source: <strong>{scheduleData.data.train.source.name} ({scheduleData.data.train.source.code})</strong></span>
                           <ArrowRight className="w-3.5 h-3.5 text-orange-400" />
-                          <span>{scheduleData.data.train.destination.name} ({scheduleData.data.train.destination.code})</span>
+                          <span>Destination: <strong>{scheduleData.data.train.destination.name} ({scheduleData.data.train.destination.code})</strong></span>
                         </div>
                       </div>
 
@@ -1852,7 +2323,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
 
                       <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                         <span className="text-[10px] text-slate-300 block flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-emerald-400" /> Travel Duration
+                          <Clock className="w-3 h-3 text-emerald-400" /> Scheduled Duration
                         </span>
                         <span className="text-sm font-black text-white">
                           {Math.floor((scheduleData.data.train.duration || 0) / 60)}h {(scheduleData.data.train.duration || 0) % 60}m
@@ -1861,10 +2332,10 @@ export const TrainPage: React.FC<TrainPageProps> = ({
 
                       <div className="bg-white/5 rounded-xl p-3 border border-white/10">
                         <span className="text-[10px] text-slate-300 block flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-amber-400" /> Total Halts
+                          <MapPin className="w-3 h-3 text-amber-400" /> Total Stoppages
                         </span>
                         <span className="text-sm font-black text-white">
-                          {scheduleData.data.train.totalHalts || scheduleData.data.route.length} Stoppages
+                          {scheduleData.data.train.totalHalts || scheduleData.data.route.length} Stops
                         </span>
                       </div>
 
@@ -1894,7 +2365,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                     <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                       <div className="flex items-center gap-2">
                         <span className="text-slate-300 font-bold flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-sky-400" /> Runs On:
+                          <Calendar className="w-3.5 h-3.5 text-sky-400" /> Scheduled Run Days:
                         </span>
                         <div className="flex items-center gap-1">
                           {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map((day) => {
@@ -1920,7 +2391,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                             setPreferredTrain(`${scheduleData.data.train.number} - ${scheduleData.data.train.name}`);
                             setOrigin(`${scheduleData.data.train.source.name} (${scheduleData.data.train.source.code})`);
                             setDestination(`${scheduleData.data.train.destination.name} (${scheduleData.data.train.destination.code})`);
-                            setActiveTab('booking');
+                            switchTab('booking');
                             window.scrollTo({ top: 350, behavior: 'smooth' });
                           }}
                           className="px-4 py-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors"
@@ -1938,10 +2409,10 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                       <div>
                         <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
                           <Milestone className="w-4 h-4 text-sky-600" />
-                          Complete Route & Stoppage Timetable ({scheduleData.data.route.length} Stations)
+                          Complete Scheduled Route & Stoppage Timetable ({scheduleData.data.route.length} Stations)
                         </h4>
                         <p className="text-[11px] text-slate-500">
-                          Scheduled arrivals, departures, platform designations, and inter-station distances.
+                          Scheduled arrivals, scheduled departures, stop duration, and cumulative distance from origin.
                         </p>
                       </div>
 
@@ -1950,7 +2421,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                           type="text"
                           value={scheduleFilterText}
                           onChange={(e) => setScheduleFilterText(e.target.value)}
-                          placeholder="Search station or code..."
+                          placeholder="Search station name or code..."
                           className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-800 bg-white outline-none focus:border-sky-500"
                         />
                         <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
@@ -1964,12 +2435,11 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                             <th className="px-3 py-3 w-12 text-center">#</th>
                             <th className="px-4 py-3">Station Name & Code</th>
                             <th className="px-3 py-3 text-center">Platform</th>
-                            <th className="px-3 py-3">Arrival</th>
-                            <th className="px-3 py-3">Departure</th>
-                            <th className="px-3 py-3">Halt</th>
-                            <th className="px-3 py-3 text-center">Day</th>
+                            <th className="px-3 py-3">Scheduled Arrival</th>
+                            <th className="px-3 py-3">Scheduled Departure</th>
+                            <th className="px-3 py-3">Stop Duration</th>
+                            <th className="px-3 py-3 text-center">Journey Day</th>
                             <th className="px-3 py-3 text-right">Distance</th>
-                            <th className="px-3 py-3 text-right">Next Speed</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1986,16 +2456,20 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                               const isSource = !item.arrival && idx === 0;
                               const isDest = !item.departure && idx === scheduleData.data.route.length - 1;
 
-                              // Calculate halt duration in minutes if both times present
+                              // Calculate halt duration from RailKit halt field or arrival/departure diff
                               let haltDisplay = '-';
-                              if (isSource) haltDisplay = 'Source';
-                              else if (isDest) haltDisplay = 'Destination';
-                              else if (item.arrival && item.departure) {
+                              if (isSource) haltDisplay = 'Origin';
+                              else if (isDest) haltDisplay = 'Terminus';
+                              else if ((item as any).halt && (item as any).halt !== '0 min') {
+                                haltDisplay = String((item as any).halt);
+                              } else if (typeof (item as any).haltMinutes === 'number' && (item as any).haltMinutes > 0) {
+                                haltDisplay = `${(item as any).haltMinutes} min`;
+                              } else if (item.arrival && item.departure) {
                                 const [arrH, arrM] = item.arrival.split(':').map(Number);
                                 const [depH, depM] = item.departure.split(':').map(Number);
                                 let diff = (depH * 60 + depM) - (arrH * 60 + arrM);
                                 if (diff < 0) diff += 24 * 60;
-                                haltDisplay = `${diff}m`;
+                                haltDisplay = `${diff} min`;
                               }
 
                               return (
@@ -2020,18 +2494,18 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                         PF {item.platform}
                                       </span>
                                     ) : (
-                                      <span className="text-slate-400">-</span>
+                                      <span className="text-slate-400">TBA</span>
                                     )}
                                   </td>
-                                  <td className="px-3 py-3 text-slate-700 font-mono">
+                                  <td className="px-3 py-3 text-slate-700 font-mono font-semibold">
                                     {item.arrival ? item.arrival : <span className="text-emerald-600 font-bold">Source</span>}
                                   </td>
-                                  <td className="px-3 py-3 text-slate-700 font-mono">
+                                  <td className="px-3 py-3 text-slate-700 font-mono font-semibold">
                                     {item.departure ? item.departure : <span className="text-rose-600 font-bold">Destination</span>}
                                   </td>
                                   <td className="px-3 py-3">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      haltDisplay === 'Source' || haltDisplay === 'Destination'
+                                      haltDisplay === 'Origin' || haltDisplay === 'Terminus'
                                         ? 'bg-slate-100 text-slate-600'
                                         : 'bg-emerald-50 text-emerald-700'
                                     }`}>
@@ -2041,11 +2515,8 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                   <td className="px-3 py-3 text-center font-semibold text-slate-600">
                                     Day {item.departureDay || item.arrivalDay || 1}
                                   </td>
-                                  <td className="px-3 py-3 text-right font-mono text-slate-700">
-                                    {item.distance} km
-                                  </td>
-                                  <td className="px-3 py-3 text-right font-mono text-slate-500">
-                                    {item.speedToNextStationKmph ? `${item.speedToNextStationKmph} km/h` : '-'}
+                                  <td className="px-3 py-3 text-right font-mono font-semibold text-slate-700">
+                                    {item.distance !== undefined ? `${item.distance} km` : '-'}
                                   </td>
                                 </tr>
                               );
@@ -2081,19 +2552,19 @@ export const TrainPage: React.FC<TrainPageProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* TAB 5: ALL STATIONS & CODE SEARCHBAR DIRECTORY */}
+          {/* TAB 6: ALL STATIONS & CODE SEARCHBAR DIRECTORY */}
           {/* ========================================================= */}
           {activeTab === 'station-search' && (
             <div className="p-4 sm:p-6 bg-slate-50/50">
               <StationSearchBar
                 onSelectStationForBooking={(stn) => {
                   setOrigin(`${stn.NameEn} (${stn.StationCode})`);
-                  setActiveTab('booking');
+                  switchTab('booking');
                   window.scrollTo({ top: 400, behavior: 'smooth' });
                 }}
                 onCheckLiveBoard={(code) => {
                   setStationBoardCode(code);
-                  setActiveTab('live-station');
+                  switchTab('live-station');
                   handleCheckStationBoard(code, stationBoardHours);
                   window.scrollTo({ top: 400, behavior: 'smooth' });
                 }}

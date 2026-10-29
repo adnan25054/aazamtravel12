@@ -1,5 +1,7 @@
 import React from 'react';
 
+export const OFFICIAL_LOGO_URL = '/assets/aistudio/dd82f3b2-20bf-4761-97b4-8be645595a42-removebg-preview_d8f6f21b.png';
+
 interface LogoProps {
   className?: string;
   iconClassName?: string;
@@ -10,21 +12,29 @@ interface LogoProps {
 
 export const Logo: React.FC<LogoProps> = ({ 
   className = '', 
-  iconClassName = 'h-13 sm:h-14 w-auto',
+  iconClassName = 'h-12 sm:h-14 w-auto',
   isDark = false,
   showSubtitle = true,
   variant = 'full',
 }) => {
   return (
-    <div className={`flex items-center gap-3 select-none ${className}`}>
-      {/* Official Old Logo Badge */}
-      <img
-        src="/logo.svg"
-        alt="Aazam Travel Agency Official Logo"
-        className={`${iconClassName} object-contain shrink-0 drop-shadow-md transition-transform duration-200 hover:scale-105`}
-        loading="eager"
-        decoding="async"
-      />
+    <div className={`flex items-center gap-2.5 sm:gap-3 select-none ${className}`}>
+      {/* Official Aazam Travel Agency Logo */}
+      <div
+        className={`shrink-0 flex items-center justify-center rounded-xl transition-transform duration-200 hover:scale-105 ${
+          isDark
+            ? 'bg-white/95 px-2 py-1 shadow-md border border-white/20'
+            : 'bg-transparent'
+        }`}
+      >
+        <img
+          src={OFFICIAL_LOGO_URL}
+          alt="Aazam Travel Agency Official Logo"
+          className={`${iconClassName} object-contain shrink-0`}
+          loading="eager"
+          decoding="async"
+        />
+      </div>
 
       {/* Title text alongside logo */}
       {variant !== 'icon' && (

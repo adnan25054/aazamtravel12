@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Building, Radio, Filter, Clock, Milestone, CheckCircle2, Activity, MessageSquare, AlertCircle, Loader2 } from 'lucide-react';
+import { Building, Radio, Filter, Clock, Milestone, CheckCircle2, Activity, MessageSquare, AlertCircle, Loader2, RefreshCw, ExternalLink } from 'lucide-react';
 import { RailRadarLiveStationResponse } from '../types';
 import { StationAutocomplete } from './StationAutocomplete';
+import { OFFICIAL_LOGO_URL } from './Logo';
+import { extractStationCode } from '../data/indianStations';
 
 interface TrainStationBoardProps {
   stationBoardCode: string;
@@ -41,23 +43,41 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
     { code: 'NGP', label: 'Nagpur' },
   ];
 
+  const handleSearchSubmit = () => {
+    const resolved = extractStationCode(stationBoardCode);
+    if (resolved) {
+      setStationBoardCode(resolved);
+      onFetchStationBoard(resolved, stationBoardHours);
+    } else {
+      onFetchStationBoard(stationBoardCode, stationBoardHours);
+    }
+  };
+
+  const lastUpdatedDisplay = stationBoardData?.meta?.timestamp
+    ? new Date(stationBoardData.meta.timestamp).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : null;
+
   return (
     <div className="p-6 sm:p-8 space-y-6">
       {/* Header with Agency Logo */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
         <div className="flex items-center gap-3">
           <img
-            src="/logo.svg"
+            src={OFFICIAL_LOGO_URL}
             alt="Aazam Travel Agency Official Logo"
-            className="w-10 h-10 rounded-xl object-contain bg-slate-100 p-1 border border-slate-200 shrink-0"
+            className="w-11 h-11 rounded-xl object-contain bg-white p-1 border border-slate-200 shrink-0 shadow-2xs"
           />
           <div>
             <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
               <Building className="w-5 h-5 text-sky-600" />
-              RailRadar Live Station Board & Departures
+              Live Station Arrivals & Departures Board
             </h2>
             <p className="text-xs text-slate-600 mt-0.5">
-              Powered by RailRadar API: Real-time arrivals & departures, platform numbers, expected timings, and live movement status.
+              Search by station name or IRCTC code to view scheduled vs. actual/estimated timings, delay status, and platform numbers.
             </p>
           </div>
         </div>
@@ -73,7 +93,7 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
                 onFetchStationBoard(stn.code, stationBoardHours);
               }}
               className={`px-2.5 py-1 rounded-lg font-bold text-xs border transition-colors ${
-                stationBoardCode === stn.code
+                stationBoardCode.toUpperCase() === stn.code
                   ? 'bg-sky-600 text-white border-sky-600'
                   : 'bg-slate-100 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border-slate-200'
               }`}
@@ -88,22 +108,21 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
       <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center gap-3">
         <div className="w-full md:flex-1 space-y-1">
           <label className="text-[11px] font-bold text-slate-700 block">
-            Station Name or IRCTC Code (with Auto-Suggest) *
+            Station Name or IRCTC Code (e.g., Indore, New Delhi, NDLS, CSMT) *
           </label>
           <StationAutocomplete
             value={stationBoardCode}
-            returnOnlyCode={true}
+            returnOnlyCode={false}
             onChange={(val, code) => {
-              const target = code || val.toUpperCase();
-              setStationBoardCode(target);
+              setStationBoardCode(code || val);
             }}
             onSelectStation={(stn) => {
               setStationBoardCode(stn.StationCode);
               onFetchStationBoard(stn.StationCode, stationBoardHours);
             }}
-            placeholder="Search by Station Name or Code (e.g. New Delhi, NDLS, CSMT, Indore)"
+            placeholder="Type Station Name or Code (e.g. New Delhi, NDLS, Mumbai, INDB)"
             icon="station"
-            inputClassName="font-mono uppercase font-bold text-slate-800"
+            inputClassName="font-bold text-slate-800"
           />
         </div>
 
@@ -118,7 +137,8 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
                 type="button"
                 onClick={() => {
                   setStationBoardHours(hrs);
-                  onFetchStationBoard(stationBoardCode, hrs);
+                  const resolved = extractStationCode(stationBoardCode) || stationBoardCode;
+                  onFetchStationBoard(resolved, hrs);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                   stationBoardHours === hrs
@@ -136,7 +156,7 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
           <button
             type="button"
             disabled={stationBoardLoading}
-            onClick={() => onFetchStationBoard()}
+            onClick={handleSearchSubmit}
             className="w-full md:w-auto px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-colors"
           >
             {stationBoardLoading ? (
@@ -147,22 +167,69 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
             ) : (
               <>
                 <Radio className="w-4 h-4" />
-                <span>View Live Board</span>
+                <span>View Live Station</span>
               </>
             )}
           </button>
         </div>
       </div>
 
+      {/* Error State with Retry & Official Alternative */}
       {stationBoardError && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium flex items-center gap-2.5">
-          <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-          <span>{stationBoardError}</span>
+        <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 space-y-3">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 shrink-0 text-rose-600 mt-0.5" />
+            <div className="space-y-1 flex-1">
+              <h3 className="text-sm font-bold text-rose-900">
+                Live Station Data Unavailable
+              </h3>
+              <p className="text-xs text-rose-800 leading-relaxed">
+                {stationBoardError}
+              </p>
+              <p className="text-[11px] text-rose-700">
+                Note: We never display fabricated train movements, timings, or platform numbers. When the live station feed is unconfigured or unreachable, you can retry or check the official Indian Railways NTES Live Station portal.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 pt-1">
+            <button
+              type="button"
+              disabled={stationBoardLoading}
+              onClick={handleSearchSubmit}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${stationBoardLoading ? 'animate-spin' : ''}`} />
+              <span>Retry Search</span>
+            </button>
+
+            <a
+              href="https://enquiry.indianrail.gov.in/mntes/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-bold text-xs transition-colors"
+            >
+              <span>Official NTES Live Station</span>
+              <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+            </a>
+
+            <a
+              href={`https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(
+                `Hello Aazam Travel Agency, I need train enquiry assistance for station ${stationBoardCode}.`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Ask Desk on WhatsApp</span>
+            </a>
+          </div>
         </div>
       )}
 
       {/* Station Board Results */}
-      {stationBoardData && (
+      {stationBoardData && stationBoardData.data && (
         <div className="space-y-4">
           {/* Station Overview Banner */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-sky-900 to-[#0A2540] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
@@ -171,22 +238,28 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
                 {stationBoardData.data.station.code}
               </div>
               <div>
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                <h3 className="text-lg font-black text-white flex items-center gap-2 flex-wrap">
                   <span>{stationBoardData.data.station.name}</span>
                   <span className="px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-black uppercase">
-                    Live
+                    Live Feed
                   </span>
                 </h3>
                 <p className="text-xs text-sky-200 mt-0.5">
-                  Arrivals & Departures window: <strong>{stationBoardData.data.window.from}</strong> to <strong>{stationBoardData.data.window.to}</strong> ({stationBoardHours} hrs)
+                  Arrivals & Departures window: <strong>{stationBoardData.data.window?.from || 'Current'}</strong> to <strong>{stationBoardData.data.window?.to || `+${stationBoardHours}h`}</strong> ({stationBoardHours} hrs)
                 </p>
+                {lastUpdatedDisplay && (
+                  <p className="text-[11px] text-amber-300 font-semibold mt-0.5 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    <span>Last Updated: {lastUpdatedDisplay}</span>
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2 text-xs">
               <div className="px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 text-center">
                 <span className="block text-[10px] text-sky-200 font-bold uppercase">Total Trains</span>
-                <span className="font-black text-base text-white">{stationBoardData.data.trains.length}</span>
+                <span className="font-black text-base text-white">{stationBoardData.data.trains?.length || 0}</span>
               </div>
             </div>
           </div>
@@ -197,7 +270,7 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
               <Filter className="w-3.5 h-3.5" /> Filter Trains:
             </span>
             {[
-              { id: 'all', label: `All (${stationBoardData.data.trains.length})` },
+              { id: 'all', label: `All (${stationBoardData.data.trains?.length || 0})` },
               { id: 'departures', label: 'Departures' },
               { id: 'arrivals', label: 'Arrivals' },
               { id: 'ontime', label: 'Right Time' },
@@ -218,25 +291,51 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
             ))}
           </div>
 
+          {/* Empty state if 0 trains in window */}
+          {(!stationBoardData.data.trains || stationBoardData.data.trains.length === 0) && (
+            <div className="p-8 rounded-2xl border border-slate-200 bg-white text-center space-y-2">
+              <p className="text-sm font-bold text-slate-800">
+                No trains reported in the selected {stationBoardHours}-hour window for {stationBoardData.data.station.name} ({stationBoardData.data.station.code}).
+              </p>
+              <p className="text-xs text-slate-500">
+                Try expanding the time window to 8 Hours or searching an adjacent junction station.
+              </p>
+            </div>
+          )}
+
           {/* Train Cards List */}
           <div className="space-y-3">
-            {stationBoardData.data.trains
+            {(stationBoardData.data.trains || [])
               .filter((item) => {
-                if (filterType === 'departures') return !!item.stop.departure;
-                if (filterType === 'arrivals') return !!item.stop.arrival;
-                if (filterType === 'ontime') return item.live.delayMinutes === 0;
-                if (filterType === 'delayed') return item.live.delayMinutes > 0;
+                if (filterType === 'departures') return !!item.stop?.departure;
+                if (filterType === 'arrivals') return !!item.stop?.arrival;
+                if (filterType === 'ontime') return (item.live?.delayMinutes || 0) === 0;
+                if (filterType === 'delayed') return (item.live?.delayMinutes || 0) > 0;
                 return true;
               })
-              .map((item) => {
+              .map((item, idx) => {
                 const { train, stop, live } = item;
-                const isDelayed = live.delayMinutes > 0;
-                const isAtStation = live.type === 'at-station';
-                const isEnRoute = live.type === 'en-route';
+                const isDelayed = (live?.delayMinutes || 0) > 0;
+                const isAtStation = live?.type === 'at-station';
+                const isEnRoute = live?.type === 'en-route';
+
+                const formatExpectedTime = (val?: string) => {
+                  if (!val) return null;
+                  if (val.includes('T')) {
+                    const parsed = new Date(val);
+                    if (!isNaN(parsed.getTime())) {
+                      return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    }
+                  }
+                  return val;
+                };
+
+                const expectedArr = formatExpectedTime(live?.expectedArrivalTime);
+                const expectedDep = formatExpectedTime(live?.expectedDepartureTime);
 
                 return (
                   <div
-                    key={`${train.number}-${stop.sequence}`}
+                    key={`${train.number}-${stop?.sequence || idx}`}
                     className="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-white hover:border-sky-300 hover:shadow-md transition-all space-y-3"
                   >
                     {/* Top Row: Train info and Status Badges */}
@@ -246,11 +345,13 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
                           {train.number}
                         </span>
                         <div>
-                          <h4 className="font-black text-slate-900 text-sm sm:text-base flex items-center gap-2">
+                          <h4 className="font-black text-slate-900 text-sm sm:text-base flex items-center gap-2 flex-wrap">
                             <span>{train.name}</span>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase px-1.5 py-0.5 rounded bg-slate-100">
-                              {train.type}
-                            </span>
+                            {train.type && (
+                              <span className="text-[10px] font-bold text-slate-500 uppercase px-1.5 py-0.5 rounded bg-slate-100">
+                                {train.type}
+                              </span>
+                            )}
                           </h4>
                           <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
                             <span>Route: <strong className="text-slate-700">{train.source}</strong> ➔ <strong className="text-slate-700">{train.destination}</strong></span>
@@ -259,12 +360,10 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                        {live.platform && (
-                          <div className="px-3 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
-                            <Milestone className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Platform {live.platform}</span>
-                          </div>
-                        )}
+                        <div className="px-3 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs flex items-center gap-1.5 shadow-2xs">
+                          <Milestone className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Platform: {live?.platform ? `PF #${live.platform}` : 'TBA'}</span>
+                        </div>
 
                         <div
                           className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border ${
@@ -276,64 +375,66 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
                           {isDelayed ? (
                             <>
                               <Clock className="w-3.5 h-3.5 text-rose-600" />
-                              <span>Late {live.delayMinutes}m</span>
+                              <span>Delayed by {live.delayMinutes} min</span>
                             </>
                           ) : (
                             <>
                               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>Right Time</span>
+                              <span>No Delay (On Time)</span>
                             </>
                           )}
                         </div>
 
-                        <div
-                          className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 ${
-                            isAtStation
-                              ? 'bg-emerald-600 text-white'
-                              : isEnRoute
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          <span className="capitalize">{live.type.replace('-', ' ')}</span>
-                        </div>
+                        {live?.type && (
+                          <div
+                            className={`px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1 ${
+                              isAtStation
+                                ? 'bg-emerald-600 text-white'
+                                : isEnRoute
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            <span className="capitalize">{live.type.replace('-', ' ')}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    {/* Timings row & Actions */}
+                    {/* Timings row & Actions (Clearly labelling Scheduled vs Actual/Estimated) */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-600">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-600 flex-1">
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Scheduled Dep</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Scheduled Arrival</span>
                           <span className="font-mono font-bold text-slate-900 text-sm">
-                            {stop.departure || '--'}
+                            {stop?.arrival || 'Source'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Scheduled Arr</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Scheduled Departure</span>
                           <span className="font-mono font-bold text-slate-900 text-sm">
-                            {stop.arrival || '--'}
+                            {stop?.departure || 'Destination'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Expected Time</span>
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                            Est. / Actual Arrival
+                          </span>
                           <span className={`font-mono font-bold text-sm ${isDelayed ? 'text-rose-600' : 'text-emerald-700'}`}>
-                            {live.expectedDepartureTime
-                              ? new Date(live.expectedDepartureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              : live.expectedArrivalTime
-                                ? new Date(live.expectedArrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                : '--'}
+                            {expectedArr || stop?.arrival || '--'}
                           </span>
                         </div>
                         <div>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase block">Days of Run</span>
-                          <span className="font-semibold text-slate-700 text-xs">
-                            {train.runDays?.length === 7 ? 'Daily' : train.runDays?.map(d => d.slice(0, 1).toUpperCase()).join(' ') || 'Regular'}
+                          <span className="text-[10px] text-slate-400 font-bold uppercase block">
+                            Est. / Actual Departure
+                          </span>
+                          <span className={`font-mono font-bold text-sm ${isDelayed ? 'text-rose-600' : 'text-emerald-700'}`}>
+                            {expectedDep || stop?.departure || '--'}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 pt-2 sm:pt-0">
+                      <div className="flex items-center gap-2 pt-2 sm:pt-0 shrink-0">
                         <button
                           type="button"
                           onClick={() => onTrackLive(train.number)}
@@ -365,3 +466,4 @@ export const TrainStationBoard: React.FC<TrainStationBoardProps> = ({
     </div>
   );
 };
+
