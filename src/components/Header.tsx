@@ -97,10 +97,11 @@ export const Header: React.FC<HeaderProps> = ({
       )}
 
       {/* Main Navbar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
+      <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo */}
           <button
+            type="button"
             onClick={() => handleNavClick('hero')}
             className="flex items-center text-left focus:outline-none shrink-0"
             aria-label="Aazam Travel Agency Home"
@@ -125,6 +126,7 @@ export const Header: React.FC<HeaderProps> = ({
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => handleNavClick(item.id)}
                   className={`px-2.5 py-2 text-xs font-semibold transition-colors rounded-lg flex items-center gap-1.5 whitespace-nowrap ${buttonClass}`}
                 >
@@ -164,6 +166,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Primary Book Now CTA */}
             <button
+              type="button"
               onClick={() => handleNavClick('train-booking')}
               className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-[#F97316] text-white hover:bg-orange-600 shadow-md shadow-orange-500/20 transition-all hover:shadow-lg active:scale-95"
             >
@@ -173,6 +176,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Admin Portal Gateway */}
             <button
+              type="button"
               onClick={isAdminLoggedIn ? onOpenAdminDashboard : onOpenAdminLogin}
               className={`p-2.5 rounded-xl border text-xs font-medium transition-colors ${
                 isAdminLoggedIn
@@ -186,30 +190,44 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {/* Mobile / Tablet menu trigger */}
-          <div className="flex items-center gap-2 xl:hidden">
+          {/* Mobile / Tablet menu trigger (42x42px touch targets) */}
+          <div className="flex items-center gap-1.5 xl:hidden">
             <a
               href={`https://wa.me/${cleanWhatsApp}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-lg bg-emerald-600 text-white md:hidden"
+              className="min-w-[42px] min-h-[42px] flex items-center justify-center rounded-xl bg-emerald-600 text-white md:hidden shadow-2xs"
               aria-label="WhatsApp"
             >
               <MessageSquare className="w-4 h-4" />
             </a>
             <a
               href={`tel:${cleanPhone}`}
-              className="p-2 rounded-lg bg-blue-50 text-[#0B2545] border border-blue-200 md:hidden"
+              className="min-w-[42px] min-h-[42px] flex items-center justify-center rounded-xl bg-blue-50 text-[#0B2545] border border-blue-200 md:hidden"
               aria-label="Call"
             >
               <Phone className="w-4 h-4" />
             </a>
             <button
+              type="button"
+              onClick={isAdminLoggedIn ? onOpenAdminDashboard : onOpenAdminLogin}
+              className={`min-w-[42px] min-h-[42px] flex items-center justify-center rounded-xl border md:hidden ${
+                isAdminLoggedIn
+                  ? 'bg-[#0B2545] text-orange-400 border-blue-900'
+                  : 'bg-slate-50 text-slate-600 border-slate-200'
+              }`}
+              aria-label="Admin Portal"
+              title="Staff / Admin Portal"
+            >
+              <Lock className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 focus:outline-none border border-slate-200"
+              className="min-w-[42px] min-h-[42px] flex items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100 focus:outline-none border border-slate-200"
               aria-label="Toggle menu"
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
           </div>
         </div>

@@ -337,8 +337,9 @@ function buildRailwayError(data: any, fallbackMessage: string, statusCode?: numb
 export async function fetchTrainConfigStatus(): Promise<{
   success: boolean;
   providers: {
+    railKitConfigured?: boolean;
     indianRailApiConfigured: boolean;
-    railRadarApiConfigured: boolean;
+    railRadarApiConfigured?: boolean;
     liveTrainStatusAvailable: boolean;
     pnrCheckAvailable: boolean;
     liveStationAvailable: boolean;

@@ -1753,18 +1753,101 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                     );
                   })()}
 
-                  {/* Route Timeline / Stations Table */}
+                  {/* Route Timeline / Stations (Mobile Cards + Desktop Table) */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
                     <div className="bg-slate-100/80 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
                       <span className="font-bold text-xs text-slate-800 uppercase tracking-wider">
                         Full Route Running Status & Station Delays
                       </span>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-slate-500 tabular-nums">
                         {liveStatusData.TrainRoute?.length || 0} Stations on Route
                       </span>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Mobile Station Timeline Cards (md:hidden) */}
+                    <div className="md:hidden divide-y divide-slate-100">
+                      {liveStatusData.TrainRoute?.map((stn, idx) => {
+                        const isCurrent =
+                          liveStatusData.CurrentStation?.StationCode === stn.StationCode;
+                        const isDelayed =
+                          stn.DelayInArrival !== '00 M' &&
+                          stn.DelayInArrival !== '-' &&
+                          stn.DelayInArrival !== '0 M';
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`p-3.5 space-y-2 ${
+                              isCurrent ? 'bg-orange-50/90 border-l-4 border-l-orange-500' : 'bg-white'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                                    #{stn.SerialNo || idx + 1}
+                                  </span>
+                                  <span className="font-bold text-xs text-slate-900">
+                                    {stn.StationName}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-mono font-bold text-[10px]">
+                                    {stn.StationCode}
+                                  </span>
+                                  {isCurrent && (
+                                    <span className="px-1.5 py-0.5 rounded bg-orange-500 text-white text-[9px] uppercase font-black">
+                                      LAST REPORTED
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span
+                                  className={`px-2 py-0.5 rounded font-bold text-[10px] tabular-nums ${
+                                    isDelayed
+                                      ? 'bg-rose-100 text-rose-700'
+                                      : 'bg-emerald-50 text-emerald-700'
+                                  }`}
+                                >
+                                  {stn.DelayInArrival}
+                                </span>
+                                {stn.IsDeparted === 'YES' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                                    Departed
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                    Upcoming
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-50/80 p-2 rounded-xl border border-slate-100 tabular-nums">
+                              <div>
+                                <span className="text-[10px] text-slate-400 uppercase block font-semibold">
+                                  Arrival (Sch / Act)
+                                </span>
+                                <span className="font-mono text-slate-600">{stn.ScheduleArrival}</span>
+                                <span className="mx-1 text-slate-300">→</span>
+                                <span className="font-mono font-bold text-slate-900">{stn.ActualArrival}</span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] text-slate-400 uppercase block font-semibold">
+                                  Departure (Sch / Act)
+                                </span>
+                                <span className="font-mono text-slate-600">{stn.ScheduleDeparture}</span>
+                                <span className="mx-1 text-slate-300">→</span>
+                                <span className="font-mono font-bold text-slate-900">{stn.ActualDeparture}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Desktop Table (hidden md:block) */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 font-bold uppercase text-[10px]">
                           <tr>
@@ -1799,7 +1882,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                     : 'bg-slate-50/40'
                                 }`}
                               >
-                                <td className="px-4 py-3 text-slate-500">{stn.SerialNo || idx + 1}</td>
+                                <td className="px-4 py-3 text-slate-500 tabular-nums">{stn.SerialNo || idx + 1}</td>
                                 <td className="px-4 py-3">
                                   <span className="font-bold text-slate-800">{stn.StationName}</span>
                                   {isCurrent && (
@@ -1811,13 +1894,13 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                 <td className="px-4 py-3 font-mono font-bold text-orange-600">
                                   {stn.StationCode}
                                 </td>
-                                <td className="px-4 py-3 text-slate-600 font-mono">{stn.ScheduleArrival}</td>
-                                <td className="px-4 py-3 font-semibold text-slate-800 font-mono">
+                                <td className="px-4 py-3 text-slate-600 font-mono tabular-nums">{stn.ScheduleArrival}</td>
+                                <td className="px-4 py-3 font-semibold text-slate-800 font-mono tabular-nums">
                                   {stn.ActualArrival}
                                 </td>
                                 <td className="px-4 py-3">
                                   <span
-                                    className={`px-1.5 py-0.5 rounded font-bold text-[10px] ${
+                                    className={`px-1.5 py-0.5 rounded font-bold text-[10px] tabular-nums ${
                                       isDelayed
                                         ? 'bg-rose-100 text-rose-700'
                                         : 'bg-emerald-50 text-emerald-700'
@@ -1826,8 +1909,8 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                     {stn.DelayInArrival}
                                   </span>
                                 </td>
-                                <td className="px-4 py-3 text-slate-600 font-mono">{stn.ScheduleDeparture}</td>
-                                <td className="px-4 py-3 font-semibold text-slate-800 font-mono">
+                                <td className="px-4 py-3 text-slate-600 font-mono tabular-nums">{stn.ScheduleDeparture}</td>
+                                <td className="px-4 py-3 font-semibold text-slate-800 font-mono tabular-nums">
                                   {stn.ActualDeparture}
                                 </td>
                                 <td className="px-4 py-3">
@@ -2428,7 +2511,92 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    {/* Mobile Stoppage Cards (md:hidden) */}
+                    <div className="md:hidden divide-y divide-slate-100">
+                      {scheduleData.data.route
+                        .filter((item) => {
+                          if (!scheduleFilterText.trim()) return true;
+                          const q = scheduleFilterText.toLowerCase();
+                          return (
+                            item.station.name.toLowerCase().includes(q) ||
+                            item.station.code.toLowerCase().includes(q)
+                          );
+                        })
+                        .map((item, idx) => {
+                          const isSource = !item.arrival && idx === 0;
+                          const isDest = !item.departure && idx === scheduleData.data.route.length - 1;
+                          let haltDisplay = '-';
+                          if (isSource) haltDisplay = 'Origin';
+                          else if (isDest) haltDisplay = 'Terminus';
+                          else if ((item as any).halt && (item as any).halt !== '0 min') {
+                            haltDisplay = String((item as any).halt);
+                          } else if (typeof (item as any).haltMinutes === 'number' && (item as any).haltMinutes > 0) {
+                            haltDisplay = `${(item as any).haltMinutes} min`;
+                          } else if (item.arrival && item.departure) {
+                            const [arrH, arrM] = item.arrival.split(':').map(Number);
+                            const [depH, depM] = item.departure.split(':').map(Number);
+                            let diff = depH * 60 + depM - (arrH * 60 + arrM);
+                            if (diff < 0) diff += 24 * 60;
+                            haltDisplay = `${diff} min`;
+                          }
+
+                          return (
+                            <div key={item.sequence || idx} className="p-3.5 space-y-2 bg-white">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                                    #{item.sequence || idx + 1}
+                                  </span>
+                                  <span className="font-bold text-xs text-slate-900">
+                                    {item.station.name}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200 text-slate-700">
+                                    {item.station.code}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  {item.platform && (
+                                    <span className="px-2 py-0.5 rounded bg-sky-100 text-sky-800 font-bold text-[10px]">
+                                      PF {item.platform}
+                                    </span>
+                                  )}
+                                  <span className="text-[11px] font-mono font-semibold text-slate-500 tabular-nums">
+                                    {item.distance !== undefined ? `${item.distance} km` : ''}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 text-[11px] bg-slate-50 p-2 rounded-xl border border-slate-100 tabular-nums">
+                                <div>
+                                  <span className="text-[9px] text-slate-400 uppercase font-bold block">
+                                    Arrival
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-800">
+                                    {item.arrival || 'Source'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-slate-400 uppercase font-bold block">
+                                    Departure
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-800">
+                                    {item.departure || 'End'}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[9px] text-slate-400 uppercase font-bold block">
+                                    Halt · Day {item.departureDay || item.arrivalDay || 1}
+                                  </span>
+                                  <span className="font-bold text-emerald-700">{haltDisplay}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+
+                    {/* Desktop Stoppage Table (hidden md:block) */}
+                    <div className="hidden md:block overflow-x-auto">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
                           <tr>
@@ -2477,7 +2645,7 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                   key={item.sequence || idx}
                                   className="hover:bg-sky-50/50 transition-colors"
                                 >
-                                  <td className="px-3 py-3 text-center font-mono text-slate-400">
+                                  <td className="px-3 py-3 text-center font-mono text-slate-400 tabular-nums">
                                     {item.sequence || idx + 1}
                                   </td>
                                   <td className="px-4 py-3">
@@ -2497,14 +2665,14 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                       <span className="text-slate-400">TBA</span>
                                     )}
                                   </td>
-                                  <td className="px-3 py-3 text-slate-700 font-mono font-semibold">
+                                  <td className="px-3 py-3 text-slate-700 font-mono font-semibold tabular-nums">
                                     {item.arrival ? item.arrival : <span className="text-emerald-600 font-bold">Source</span>}
                                   </td>
-                                  <td className="px-3 py-3 text-slate-700 font-mono font-semibold">
+                                  <td className="px-3 py-3 text-slate-700 font-mono font-semibold tabular-nums">
                                     {item.departure ? item.departure : <span className="text-rose-600 font-bold">Destination</span>}
                                   </td>
                                   <td className="px-3 py-3">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold tabular-nums ${
                                       haltDisplay === 'Origin' || haltDisplay === 'Terminus'
                                         ? 'bg-slate-100 text-slate-600'
                                         : 'bg-emerald-50 text-emerald-700'
@@ -2512,10 +2680,10 @@ export const TrainPage: React.FC<TrainPageProps> = ({
                                       {haltDisplay}
                                     </span>
                                   </td>
-                                  <td className="px-3 py-3 text-center font-semibold text-slate-600">
+                                  <td className="px-3 py-3 text-center font-semibold text-slate-600 tabular-nums">
                                     Day {item.departureDay || item.arrivalDay || 1}
                                   </td>
-                                  <td className="px-3 py-3 text-right font-mono font-semibold text-slate-700">
+                                  <td className="px-3 py-3 text-right font-mono font-semibold text-slate-700 tabular-nums">
                                     {item.distance !== undefined ? `${item.distance} km` : '-'}
                                   </td>
                                 </tr>

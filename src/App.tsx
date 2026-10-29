@@ -38,7 +38,8 @@ import {
   FileCheck,
   Building,
   CalendarDays,
-  ArrowRight
+  ArrowRight,
+  Home
 } from 'lucide-react';
 
 const DEFAULT_SETTINGS: WebsiteSettings = {
@@ -247,16 +248,26 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Check if initially loaded on /bus
+  // Check if initially loaded on /bus or /admin
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const p = window.location.pathname.toLowerCase();
+      const p = window.location.pathname.toLowerCase().replace(/\/+$/, '');
       if (p === '/bus' || p === '/buses' || p.startsWith('/bus/')) {
         setActiveBookingTab('bus');
         setTimeout(() => {
           const el = document.getElementById('train-booking');
           if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 150);
+      } else if (p === '/admin') {
+        checkAdminSession().then((session) => {
+          if (session.authenticated && session.user) {
+            setIsAdminLoggedIn(true);
+            setAdminUser(session.user);
+            setShowAdminDashboard(true);
+          } else {
+            setShowAdminLogin(true);
+          }
+        });
       }
     }
   }, []);
@@ -502,7 +513,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-slate-800 font-sans selection:bg-orange-500 selection:text-white overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-white text-slate-800 font-sans selection:bg-orange-500 selection:text-white overflow-x-hidden pb-16 md:pb-0">
       {/* Header */}
       <Header
         settings={settings}
@@ -718,11 +729,12 @@ export default function App() {
       )}
 
       {/* Floating Action Buttons (Sticky Quick WhatsApp & Admin) */}
-      <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-3 pointer-events-auto">
+      <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-30 flex flex-col items-end gap-2.5 pointer-events-auto">
         {isAdminLoggedIn && (
           <button
+            type="button"
             onClick={() => setShowAdminDashboard(true)}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-[#0B2545] text-white text-xs font-bold shadow-xl border border-blue-800 hover:bg-blue-900 transition-all hover:scale-105"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-[#0B2545] text-white text-xs font-bold shadow-xl border border-blue-800 hover:bg-blue-900 transition-all hover:scale-105 min-h-[42px]"
             title="Open Admin Dashboard"
           >
             <ShieldCheck className="w-4 h-4 text-orange-400" />
@@ -737,13 +749,74 @@ export default function App() {
           )}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-700/30 transition-all hover:scale-105 active:scale-95"
+          className="flex items-center gap-2 px-4 py-3 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xl shadow-emerald-700/30 transition-all hover:scale-105 active:scale-95 min-h-[46px]"
           aria-label="Direct WhatsApp Chat"
         >
           <MessageSquare className="w-5 h-5" />
           <span className="hidden sm:inline">WhatsApp (+91 94215 56220)</span>
         </a>
       </div>
+
+      {/* Fixed Bottom Mobile Navigation Bar (Thumb-Zone Ergonomics) */}
+      <nav
+        aria-label="Mobile Bottom Navigation"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-1.5 py-1 grid grid-cols-5 gap-1 shadow-[0_-4px_16px_rgba(11,37,69,0.08)]"
+      >
+        {[
+          {
+            id: 'home',
+            label: 'Home',
+            icon: Home,
+            isActive: currentPage === 'home' && activeRoute === '/',
+            onClick: () => navigateToRoute('/'),
+          },
+          {
+            id: 'book-train',
+            label: 'Book Train',
+            icon: Train,
+            isActive: currentPage === 'train' && activeTrainTab === 'booking',
+            onClick: () => navigateToRoute('/train', 'booking'),
+          },
+          {
+            id: 'live-status',
+            label: 'Live Status',
+            icon: Activity,
+            isActive: currentPage === 'train' && activeTrainTab === 'live-status',
+            onClick: () => navigateToRoute('/live-train-status', 'live-status'),
+          },
+          {
+            id: 'pnr-check',
+            label: 'PNR Check',
+            icon: FileCheck,
+            isActive: currentPage === 'train' && activeTrainTab === 'pnr-status',
+            onClick: () => navigateToRoute('/pnr-status', 'pnr-status'),
+          },
+          {
+            id: 'live-station',
+            label: 'Station',
+            icon: Building,
+            isActive: currentPage === 'train' && activeTrainTab === 'live-station',
+            onClick: () => navigateToRoute('/live-station', 'live-station'),
+          },
+        ].map((item) => {
+          const IconComponent = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={item.onClick}
+              className={`flex flex-col items-center justify-center rounded-xl py-1.5 px-1 min-h-[48px] transition-colors ${
+                item.isActive
+                  ? 'bg-orange-50 text-orange-600 font-black'
+                  : 'text-slate-600 hover:bg-slate-100 font-semibold'
+              }`}
+            >
+              <IconComponent className={`w-4 h-4 mb-0.5 ${item.isActive ? 'text-orange-600' : 'text-slate-500'}`} />
+              <span className="text-[10px] leading-tight truncate max-w-full">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* WhatsApp Modal after Enquiry Submission */}
       {submittedEnquiryData && (
